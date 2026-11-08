@@ -1,0 +1,74 @@
+{
+  "version": 1,
+  "values": [
+    {
+      "name": "text decimal places",
+      "group": "format",
+      "value": 2,
+      "source": "Python _processar_texto L1087 / _replace_calculated_blocks L478"
+    },
+    {
+      "name": "rounding",
+      "group": "format",
+      "value": "half away from zero",
+      "source": "Python formatar_numero_pt L179"
+    },
+    {
+      "name": "page width",
+      "group": "pdf",
+      "value": 595.2756,
+      "unit": "pt",
+      "source": "Python Exam.export_pdf L1115 A4"
+    },
+    {
+      "name": "page height",
+      "group": "pdf",
+      "value": 841.8898,
+      "unit": "pt",
+      "source": "Python Exam.export_pdf L1115 A4"
+    },
+    {
+      "name": "page margin",
+      "group": "pdf",
+      "value": 56.6929,
+      "unit": "pt",
+      "source": "Python Exam.export_pdf L1120 2cm"
+    },
+    {
+      "name": "shuffle alternatives",
+      "group": "generation",
+      "value": true,
+      "source": "Python Question.instantiate L1042"
+    },
+    {
+      "name": "independent variables",
+      "group": "generation",
+      "value": true,
+      "source": "Python Dataset.sample L1001 / Question.instantiate L1037"
+    },
+    {
+      "name": "category selection",
+      "group": "generation",
+      "value": "without replacement per student",
+      "source": "Python _selecionar_questoes_por_plano L2062"
+    },
+    {
+      "name": "authoring decimal limit",
+      "group": "new authoring",
+      "value": 6,
+      "estimated": true
+    },
+    {
+      "name": "exhaustive validation limit",
+      "group": "new authoring",
+      "value": 10000,
+      "estimated": true
+    },
+    {
+      "name": "sampled validation count",
+      "group": "new authoring",
+      "value": 256,
+      "estimated": true
+    }
+  ]
+}
