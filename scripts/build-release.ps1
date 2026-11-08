@@ -13,7 +13,7 @@ if (-not $version) { throw 'Versao invalida no Cargo.toml.' }
 if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne "v$version") { throw 'A tag precisa corresponder a versao do Cargo.toml.' }
 cargo test --locked
 if ($LASTEXITCODE -ne 0) { throw 'Os testes falharam.' }
-cargo build --release --locked
+cargo rustc --release --locked -- -C target-feature=+crt-static
 if ($LASTEXITCODE -ne 0) { throw 'A compilacao falhou.' }
 $packageName = "caderno-$version-windows-x64"
 $stage = Join-Path $PWD "dist/$packageName"

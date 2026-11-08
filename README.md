@@ -50,7 +50,7 @@ cargo test --locked
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-release.ps1
 ~~~
 
-O script testa, compila com **--release --locked**, monta o ZIP em dist e calcula seu SHA-256. Para já incorporar o repositório público:
+O script testa, compila com **cargo rustc --release --locked -- -C target-feature=+crt-static**, incorpora estaticamente o runtime C, monta o ZIP em dist e calcula seu SHA-256. Para já incorporar o repositório público:
 
 ~~~powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-release.ps1 -Repository sua-conta/caderno
