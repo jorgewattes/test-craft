@@ -5,10 +5,10 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 // MoodTest.py Exam.export_pdf, source offset 0x95d0: A4, margins 2 * cm.
-// Keep the original unit conversions instead of rounding the dimensions early.
-pub const WIDTH: f64 = 210. / 25.4 * 72.;
-pub const HEIGHT: f64 = 297. / 25.4 * 72.;
-pub const MARGIN: f64 = 2. / 2.54 * 72.;
+// Full precision results of 210/25.4*72, 297/25.4*72 and 2/2.54*72.
+pub const WIDTH: f64 = 595.2755905511812;
+pub const HEIGHT: f64 = 841.8897637795276;
+pub const MARGIN: f64 = 56.69291338582677;
 
 fn win(c: char) -> u8 {
     match c {

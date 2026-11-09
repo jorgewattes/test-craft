@@ -94,11 +94,14 @@ fn parse_release(bytes: &[u8], repo: &str, current: &str) -> Result<Option<Relea
         return Ok(None);
     }
     let number = r.tag_name.trim_start_matches('v');
-    if !r
-        .assets
-        .iter()
-        .any(|a| a.name == format!("test-craft-{number}-windows-x64.zip") && a.state == "uploaded")
-    {
+    if !r.assets.iter().any(|a| {
+        [
+            format!("test-craft-{number}-windows-x64.msi"),
+            format!("test-craft-{number}-windows-x64.zip"),
+        ]
+        .contains(&a.name)
+            && a.state == "uploaded"
+    }) {
         return Err(format!(
             "A versão {number} existe, mas o pacote Windows ainda não está disponível."
         ));
@@ -308,6 +311,11 @@ mod tests {
             r.url,
             "https://github.com/escola/test-craft/releases/latest"
         );
+    }
+    #[test]
+    fn offers_msi_releases() {
+        let payload = br#"{"tag_name":"v0.3.0","assets":[{"name":"test-craft-0.3.0-windows-x64.msi","state":"uploaded"}]}"#;
+        assert!(parse_release(payload, "a/b", "0.2.0").unwrap().is_some());
     }
 
     #[test]

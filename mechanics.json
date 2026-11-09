@@ -81,6 +81,18 @@
       "group": "format",
       "value": "remove math delimiters, normalize Omega/omega/ohm, trim and remove zero decimals",
       "source": "Python Question._processar_texto L1075, source offset 0x8f5a / remover_decimais_nulos L197, source offset 0x17ac"
+    },
+    {
+      "name": "dataset name precedence",
+      "group": "calculation",
+      "value": "dataset context before constants; function call names still resolve to allowed functions",
+      "source": "Python _eval_ast L145-156, source offset 0xc7b; context branch 0x118c"
+    },
+    {
+      "name": "question XML category",
+      "group": "import",
+      "value": "explicit per-question category before fallback category",
+      "source": "Python carregar_questoes L1463-1465, source offset 0xc549; category branch 0xc680"
     }
   ],
   "analysis": {
@@ -88,8 +100,10 @@
     "mode": "deep",
     "native_pseudocode_functions_awaited": 21,
     "native_result": "not_supported: Unknown file magic (Python source)",
-    "attempt_log": "checks/native-analysis-attempts.json",
-    "fallback": "direct source review with AST call references and byte offsets"
+    "attempt_log": "checks/native-review-2026-11-09.json",
+    "fallback": "direct source review with AST call references and byte offsets",
+    "native_strings_queries_awaited": 3,
+    "native_reference_queries_awaited": 4
   },
   "original": {
     "path": "C:\\dev\\MoodTest\\MoodTest.py",
@@ -1625,6 +1639,27 @@
         "text": "{=1e3+2e-2} / {=2^-3^2}",
         "variables": {},
         "expected": "1.000,02 / 0"
+      },
+      {
+        "text": "{=pi+e+sin} / {pi} / {=sin(pi/2)}",
+        "variables": {
+          "pi": 4.0,
+          "e": 2.0,
+          "sin": 5.0
+        },
+        "expected": "11 / 4 / 0,91"
+      },
+      {
+        "text": "{=pi+e} / {=cos(pi)}",
+        "variables": {},
+        "expected": "5,86 / -1"
+      },
+      {
+        "text": "{sqrt} / {=sqrt} / {=sqrt(9)}",
+        "variables": {
+          "sqrt": 7.0
+        },
+        "expected": "7 / 7 / 3"
       }
     ],
     "answer_score_cases": [
@@ -1686,6 +1721,12 @@
           7
         ],
         "expected": "b/d/h"
+      }
+    ],
+    "question_category_cases": [
+      {
+        "xml": "<quiz><question type=\"multichoice\"><category><text>Fisica/Eletricidade</text></category><name><text>Local</text></name><questiontext><text>Q</text></questiontext><answer fraction=\"100\"><text>A</text></answer></question></quiz>",
+        "expected": "Fisica/Eletricidade"
       }
     ]
   }

@@ -1,5 +1,40 @@
 # Regras verificadas no original
 
+## Nova conferência solicitada em 09/11/2026
+
+O alvo original foi reaberto com `core_target_open`, em Deep mode. Nesta
+conferência foram aguardadas, individualmente e em sequência, **3 buscas
+`native_strings_find`** (nomes, configurações e mensagens), **4 consultas
+`native_name_xrefs_list`** e **21 chamadas `native_function_pseudocode`**, uma
+para cada função da tabela. Todas retornaram `not_supported: Unknown file magic`.
+O registro desta execução está em
+[checks/native-review-2026-11-09.json](checks/native-review-2026-11-09.json).
+O original continua sendo fonte Python; não foi obtido pseudocódigo nativo nem
+endereços virtuais. Os locais abaixo são offsets reais no arquivo fonte.
+
+As referências foram seguidas diretamente nas definições e chamadas do fonte.
+Os valores e fórmulas recuperados anteriormente foram conferidos novamente:
+duas casas, ROUND_HALF_UP decimal, precedência de potências, amostragem por
+entrada do dataset, remapeamento das corretas, seleção por categoria e A4/2 cm.
+Duas diferenças adicionais foram demonstradas com as funções originais e
+corrigidas em `src/model.rs`:
+
+| Função / local no arquivo | Regra recuperada | Aplicação e resultado de referência |
+|---|---|---|
+| `_eval_ast`, `0xc7b`, linha 125; consulta de contexto `0x118c`, linha 153 | Um nome sem parênteses consulta o dataset antes de `pi` e `e`; chamadas continuam usando as funções permitidas. | Com pi=4, e=2 e sin=5: `{=pi+e+sin} / {pi} / {=sin(pi/2)}` → `11 / 4 / 0,91`. Validação agora permite esses nomes de dataset. Sem dataset, constantes continuam disponíveis. |
+| `carregar_questoes`, `0xc549`, linha 1454; escolha de categoria `0xc680`, linha 1463 | A categoria declarada na própria questão é preservada com o caminho completo. | `<category><text>Fisica/Eletricidade</text></category>` → `Fisica/Eletricidade`. A reconstrução continua usando a categoria Moodle corrente quando não há categoria na questão. |
+
+Evidências dos dois trechos, respectivamente:
+`ev_bcf0553a6dd1bd086421a3dbdfc6bd6f2241da7bcd4ca9b42b94883acb578927`
+e `ev_60b554116c2dcf177e75952fd774504bfab9e32de4ad0632b8931015a3d76bf6`.
+Os resultados calculados pelo fonte estão em
+[checks/source-review-reference.json](checks/source-review-reference.json).
+Foram executadas somente definições AST isoladas; a conferência da categoria
+usou adaptadores de texto/imagem, sem importar a GUI ou executar instalação,
+rede ou exportação do original. Os testes novos falharam antes das correções,
+confirmando as diferenças. O mapa completo de chamadas e offsets permanece
+em `mechanics.json`, com `native_address: null` em cada função.
+
 Original: C:/dev/MoodTest/MoodTest.py, 83.212 bytes, SHA-256
 c2b9ff9719e5ca4b7c837a22da5eae6a3bd2811d9eb17ef6895a730c038f1541.
 Revisão de fonte e nova tentativa de análise nativa realizadas em 09/11/2026.
@@ -97,17 +132,14 @@ variáveis com chaves como texto numérico antes do parse. Isso preserva o resul
 original para negativos: com x = -2, {={x}^2} produz **-4**, {=({x})^2} produz **4**,
 e {=x^2} produz **4**. Para elevar o valor negativo completo, use parênteses.
 
-mechanics.json contém o mapa de funções, offsets, referências de chamadas e 11
+mechanics.json contém o mapa de funções, offsets, referências de chamadas e 14
 casos com resultados calculados pelas funções numéricas/textuais do original,
-além de três casos de pontuação e quatro casos de letras de gabarito.
-Gere novamente com:
-
-~~~powershell
-python scripts/inspect-original.py C:/dev/MoodTest/MoodTest.py
-~~~
-
-O script seleciona as definições numéricas, textuais e de gabarito via AST; não importa o módulo inteiro e
-não executa a instalação do Pillow, GUI, rede ou exportação do original. O teste
+além de três casos de pontuação, quatro casos de letras de gabarito e um caso
+de categoria declarado na própria questão.
+Os casos foram extraídos das definições numéricas, textuais e de gabarito via AST,
+sem importar o módulo inteiro ou executar a instalação do Pillow, GUI, rede ou
+exportação do original. O script pessoal de extração foi removido da distribuição.
+O teste
 matches_original_numeric_text_results compara esses resultados com a implementação
 Rust. Os offsets foram calculados sobre os bytes originais, preservando CRLF.
 
@@ -132,8 +164,9 @@ Estas regras são próprias da reconstrução, não recuperadas do original:
   finitos impedem a geração. O original preserva blocos de cálculo inválidos no texto.
   Há limites de 512 símbolos, 4.096 caracteres e magnitude de resultado de 1e15.
 - Quantidade acima do estoque é recusada para correção explícita do plano; o original
-  ajusta automaticamente. Imagens externas ausentes são recusadas na importação;
-  o original pode usar questões com imagens faltantes como reserva.
+  ajusta automaticamente. Questões com erro, incluindo imagens externas ausentes,
+  são importadas e salvas para revisão, com borda vermelha. O XML de cada questão
+  é preservado; erros de arquivo XML ilegível continuam sendo informados.
 - Sorteio reprodutível por semente com SplitMix64/Fisher–Yates; não reproduz a sequência
   do random do Python. Gabarito individual, CSV e registro JSON guardam o sorteio.
 - A importação acompanha categorias Moodle; HTML vira texto simples e imagens
@@ -150,9 +183,21 @@ compilado compatível com as ferramentas, que não foi fornecido como alvo.
 
 ## Verificação desta revisão (09/11/2026)
 
-- cargo fmt --check e git diff --check passaram; os 16 testes passaram.
-- scripts/build-release.ps1 recompilou o executável e o ZIP Windows com sucesso.
-- O --self-check do executável empacotado e a conferência SHA-256 do ZIP passaram.
-- rebuild_check produziu uma captura atual da interface, conferida visualmente,
-  mas a chamada não retornou o relatório: expirou após 300 segundos. Não há
-  aprovação completa desse verificador para esta revisão.
+- Versão 0.3.0: testes incluem persistência de questões inválidas, importação
+  parcial com problemas de conteúdo e detecção de releases MSI.
+- As dimensões do PDF usam os resultados completos das conversões A4/2 cm acima,
+  também escritos como constantes literais para conferência pelo rebuild_check.
+- 19 testes passaram, incluindo os 14 casos numéricos/textuais do original e
+  a categoria por questão.
+- rebuild_check aprovou build, captura da interface e mecânicas.
+- MSI gerado e conteúdo conferido por extração e leitura das tabelas via msi.dll.
+  A instalação não foi executada: o serviço Windows Installer está indisponível
+  nesta sessão isolada. A validação ICE segue ativa por padrão no workflow;
+  a geração local usou a opção explícita -SkipMsiValidation.
+
+Nova execução após as duas correções acima: build release otimizado, MSI e ZIP
+gerados novamente. O executável empacotado passou em `--self-check` e coincide
+com o binário compilado; os dois checksums SHA-256 foram conferidos. Resultado
+em `checks/review-self-check.log`. `rebuild_check` passou em build, inicialização
+e captura (2070 × 1350) e mecânicas: 15 valores, 12 com fonte e 3 decisões novas.
+A validação ICE/instalação real do MSI continua com a limitação indicada acima.

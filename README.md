@@ -1,128 +1,51 @@
 # Test Craft
 
-Aplicativo de código aberto para criar questões calculadas, organizar um banco local e gerar provas e gabaritos individualizados em PDF. Interface em português, sem conta e sem mensalidade. Versão atual: **0.2.0**.
+Crie questões calculadas, organize seu banco e gere provas e gabaritos individualizados em PDF. Gratuito, em português e com os dados salvos no computador. Feito com o Art Craft.
 
-O nome **Test Craft** foi escolhido porque o aplicativo foi feito com o **Art Craft**. O projeto transforma o fluxo original do MoodTest em uma ferramenta local para elaborar questões e gerar provas.
+## Instalar
 
-## Usar no Windows
+Baixe **test-craft-0.3.0-windows-x64.msi** em [Releases](https://github.com/jorgewattes/test-craft/releases/latest), execute o instalador e abra **Test Craft** pelo menu Iniciar. Requer Windows 10/11 de 64 bits e suporte a OpenGL.
 
-1. Baixe **test-craft-0.2.0-windows-x64.zip** na página de Releases do repositório público (quando publicado).
-2. Extraia o ZIP para uma pasta em que você possa gravar, como Documentos/Test Craft. Evite executar dentro do ZIP ou instalar em Arquivos de Programas.
-3. Abra **test-craft.exe**. O aplicativo cria a pasta **data** ao lado do executável no primeiro uso.
-4. Em **Banco de questões**, explore os exemplos ou importe seu banco. Em **Elaborar questão**, cadastre e valide suas questões. Em **Criar prova**, escolha quantidades por categoria, informe os alunos e confira a prévia antes de exportar.
+Para atualizar, feche o aplicativo e execute o novo MSI. Os dados ficam em **%LOCALAPPDATA%\Test Craft\data** e são preservados na atualização e desinstalação. Copie essa pasta para fazer backup.
 
-Requisitos: Windows 10/11 de 64 bits, suporte gráfico OpenGL e permissão para gravar na pasta do programa. A consulta de atualizações utiliza o curl.exe fornecido pelo Windows. O executável é portátil e não tem assinatura digital. Não é necessário instalar Rust para usá-lo.
+A versão portátil em ZIP também está disponível: extraia e abra **test-craft.exe**. Nela, os dados ficam na pasta **data** ao lado do executável. Para migrar do ZIP ao MSI, feche o aplicativo e copie essa pasta para o caminho acima.
 
-O pacote compilado nesta entrega está em **dist/test-craft-0.2.0-windows-x64.zip** e o executável em **dist/test-craft-0.2.0-windows-x64/test-craft.exe**. O arquivo ZIP.sha256 contém a soma para conferir o download com Get-FileHash -Algorithm SHA256.
+## Usar
 
-## Funcionalidades
+- **Banco de questões:** importe XML Moodle ou JSON, pesquise, edite e exporte seu banco.
+- **Elaborar questão:** escreva enunciado, variáveis e alternativas. Use `{x}` para variáveis e `{={x}*2}` para cálculos.
+- **Criar prova:** escolha categorias, informe os alunos, confira a prévia e exporte PDFs e gabaritos.
 
-- Banco de questões com busca, categorias, edição, duplicação, exclusão, importação e exportação JSON.
-- Variáveis em intervalos discretos ou valores de datasets Moodle. Use **{x}** para inserir uma variável e **{={x}*2}** para um cálculo.
-- Validação de nomes, intervalos, fórmulas, resultados finitos e alternativas duplicadas. Verifica todas as combinações até 10.000; acima disso, usa 256 amostras e avisa.
-- Imagens PNG/JPG opcionais em enunciados e alternativas.
-- Importação de XML Moodle calculatedmulti e multichoice, com datasets explícitos e imagens incorporadas.
-- Quantidades e ordem por categoria, lista de alunos, identificador de sorteio e prévia por aluno.
-- PDFs individuais de prova e gabarito, PDF com todas as provas, gabarito consolidado PDF/CSV e registro JSON dos valores e alternativas utilizados.
-- Reabertura dos lotes a partir do registro JSON e atalhos para os arquivos locais.
+Questões com erro são importadas e salvas com **borda vermelha** e indicação do problema. Corrija no editor; problemas específicos da importação podem ser marcados como revisados após a correção. O XML original pode ser copiado no editor. Questões precisam estar válidas para gerar provas. XML com estrutura ilegível é informado como erro de arquivo.
 
-## Dados, backup e troca de computador
+## Desenvolvimento
 
-Na distribuição portátil, **data/banco.json** armazena as questões, **data/preferencias.json** guarda a montagem da prova, **data/atualizacoes.json** guarda as preferências de atualização e **data/provas/** recebe os lotes exportados na pasta padrão. Durante desenvolvimento via Cargo, usa-se a pasta data do projeto.
+### Conectar o Codex ao GitHub
 
-Para backup completo, feche o programa e copie a pasta **data**. Para compartilhar somente questões, use **Exportar banco** e importe o JSON na outra instalação. Nomes de alunos e provas exportadas podem conter informações pessoais: compartilhe apenas o que desejar. Os scripts e o .gitignore deixam os dados locais fora do repositório e dos pacotes públicos.
+Abra **configurar-github.cmd** nesta pasta e conclua a autorização no navegador oficial do GitHub com uma conta que possa atualizar [jorgewattes/test-craft](https://github.com/jorgewattes/test-craft). Requer Git e GitHub CLI (`gh`) instalados. Depois, peça ao Codex para enviar as atualizações. O atalho verifica a permissão de escrita, configura o Git somente para este projeto e preenche a identidade de commits ausente com a conta conectada. Nenhuma atualização é publicada durante a configuração.
 
-## Atualizações
+Para conferir a conexão sem abrir o login:
 
-Em **Sobre e atualizações**, informe **conta/repositorio**, o link do repositório ou seu link de releases no GitHub e clique **Salvar preferências**. Os pacotes gerados pelo workflow oficial já incorporam o próprio repositório, dispensando essa configuração pelos usuários.
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-github.ps1 -CheckOnly
+```
 
-Com a opção automática ativa, o programa consulta a release estável mais recente ao abrir e a cada seis horas enquanto estiver em uso. Também é possível clicar **Verificar agora**. A consulta ocorre em segundo plano, tem limite de tempo e não envia questões, nomes de alunos ou provas. Falta de internet, limite da API, repositório inexistente e ausência de release são informados na tela; o trabalho local continua disponível.
+Se aparecer `detected dubious ownership`, abra novamente **configurar-github.cmd** atualizado. O atalho autoriza somente a pasta deste projeto durante os comandos de configuração, sem alterar a confiança global do Git.
 
-Uma versão numericamente maior com o pacote **test-craft-VERSAO-windows-x64.zip** publicado abre a oferta de atualização. **Baixar atualização** abre a página oficial da release no navegador; **Mais tarde** permite continuar. Prereleases e rascunhos são ignorados. A integração segue a [API oficial de releases do GitHub](https://docs.github.com/en/rest/releases/releases#get-the-latest-release).
+Se o login expirar, abra novamente o atalho. Não envie senhas ou tokens pelo chat. As instruções para próximas sessões do Codex estão em **AGENTS.md**. Consulte também a [documentação oficial do Codex](https://developers.openai.com/codex/).
 
-Para instalar a atualização: salve seu trabalho, baixe e extraia o novo ZIP, feche o Test Craft e substitua o executável antigo pelo novo, **mantendo a pasta data existente**. Não há substituição silenciosa de arquivos nem instalação automática. A configuração pública em release-config.json é incorporada durante a compilação; alterar esse arquivo depois de compilar não muda o executável. A preferência salva na interface prevalece sobre a configuração incorporada.
+No Craft Anything, o perfil **Codex Caderno GitHub** usa o executor do Craft (`build_command_run`) com seu usuário habitual do Windows. Se o terminal isolado informar **CodexSandboxOffline**, o Codex deve repetir a verificação por esse executor antes de solicitar um novo login. Se o executor estiver indisponível, abra o Codex ou o PowerShell com seu usuário habitual do Windows.
 
-## Compilar e verificar
+O projeto fica em **C:\dev\moodtest2\app**, branch **main**, versão **0.3.0** e tag **v0.3.0**, no repositório **jorgewattes/test-craft**. Confira a conexão antes de enviar; a publicação só está concluída quando o workflow da tag terminar e a Release com MSI e ZIP estiver disponível no GitHub. A validação ICE do MSI é obrigatória no workflow; pacotes locais gerados com `-SkipMsiValidation` não substituem essa validação.
 
-Instale Rust estável para o alvo **x86_64-pc-windows-msvc** e as ferramentas C++ do Visual Studio Build Tools com Windows SDK. Abra um terminal nesta pasta:
+Com Rust e Visual Studio Build Tools instalados:
 
-~~~powershell
-cargo build --locked
+```powershell
 cargo test --locked
+cargo build --locked
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-release.ps1
-~~~
+```
 
-O script testa, compila com **cargo rustc --release --locked -- -C target-feature=+crt-static**, incorpora estaticamente o runtime C, monta o ZIP em dist e calcula seu SHA-256. Para já incorporar o repositório público:
+O script gera MSI, ZIP, SHA-256 e as notas da versão em **dist/**. Tags `vX.Y.Z` correspondentes à versão do Cargo.toml publicam os pacotes pelo GitHub Actions, com as notas da versão atual. O workflow exige a validação do instalador antes da publicação.
 
-~~~powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-release.ps1 -Repository sua-conta/test-craft
-~~~
-
-Com as dependências já disponíveis no computador, também é possível usar cargo build --release --locked --offline. Cargo.lock está incluído para manter as versões de dependências.
-
-Verificações adicionais:
-
-~~~powershell
-cargo run --locked -- --self-check
-cargo run --locked -- --screenshot shots/banco.png
-cargo run --locked -- --screenshot shots/atualizacoes.png --page 4
-~~~
-
-A opção self-check gera PDFs de exemplo em checks. A captura encerra o aplicativo após salvar o PNG. Os testes cobrem cálculos, validação, importação, persistência, sorteio, PDFs e detecção de atualizações (versões, resposta inválida, pacote ausente e URLs).
-
-## Publicar o repositório e a release
-
-**Estado desta entrega:** fontes e distribuição Windows preparados localmente; a publicação remota depende de uma conta autenticada no GitHub. Não há um endereço público fictício configurado. O release-config.json permanece sem repositório até a publicação ou configuração pela interface.
-
-1. Instale [Git](https://git-scm.com/downloads/win) e [GitHub CLI](https://cli.github.com/), se necessário. No PowerShell do seu usuário Windows, execute o comando abaixo e conclua a autorização no navegador com a conta em que deseja publicar:
-
-~~~powershell
-gh auth login --hostname github.com --git-protocol https --web --scopes workflow
-~~~
-
-Se já estiver autenticado nessa sessão, autorize o envio do workflow com **gh auth refresh --hostname github.com --scopes workflow**. Essa permissão permite enviar a automação que compila e publica o pacote Windows; a autorização de repositórios permite criar o repositório e enviar os fontes. Consulte as instruções oficiais de [login](https://cli.github.com/manual/gh_auth_login) e [permissões adicionais](https://cli.github.com/manual/gh_auth_refresh).
-
-2. Abra **scripts/publicar.cmd** com dois cliques para publicar em **sua-conta/test-craft**, usando seu login do Windows. Para escolher outro repositório novo ou vazio, execute o comando abaixo nesta pasta:
-
-~~~powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/publish.ps1 -Repository sua-conta/test-craft
-~~~
-
-O script cria um repositório **público**, configura origin, incorpora seu endereço no aplicativo, testa e compila, registra os fontes e envia a tag correspondente à versão. Um repositório privado existente é recusado, preservando sua visibilidade. O workflow **.github/workflows/release.yml** executa os testes no Windows, recompila o ZIP e publica ZIP e SHA-256 em GitHub Releases. O código-fonte também fica disponível no repositório e nos arquivos de fonte da release. Acompanhe a execução em **Actions** e compartilhe o endereço **https://github.com/SUA-CONTA/test-craft/releases** após a conclusão. GitHub Actions deve estar habilitado no repositório.
-
-**Já estou autenticado no CMD, PowerShell e GitHub Desktop. Isso basta?** Basta quando o comando de publicação consegue acessar a conta nessa mesma sessão. O login no seu terminal ou no Desktop não comprova que o Craft Anything também tem acesso: ele pode executar como **CodexSandboxOffline**, um usuário Windows diferente. Uma recusa nessa sessão não significa que você precise refazer o login no seu usuário.
-
-Para conferir sem publicar nada, abra **scripts/verificar-login.cmd** com dois cliques no seu Windows. A janela mostra o usuário Windows e confirma a conta GitHub quando consegue acessá-la. Se confirmar, abra **scripts/publicar.cmd** pelo mesmo usuário. Se a verificação também falhar no seu usuário, execute **gh auth login** nesse terminal e tente novamente. Não é necessário copiar tokens ou credenciais para o Craft Anything.
-
-**Verificação desta entrega (09/11/2026):** o comando de verificação rodou como **wattes/CodexSandboxOffline** e não conseguiu acessar a API do GitHub; nenhum repositório foi criado e nada foi enviado. Para publicar agora, siga os passos acima no seu usuário Windows. A autorização no navegador precisa valer para a sessão que executa a publicação; um login feito no seu usuário não libera automaticamente o acesso desta sessão isolada.
-
-Se você já usava a versão chamada Caderno, extraia o novo pacote em outra pasta e, com o aplicativo fechado, copie a pasta **data** antiga para junto de **test-craft.exe**. O formato dos dados continua compatível.
-
-A mesma verificação está disponível pelo terminal com **powershell -NoProfile -ExecutionPolicy Bypass -File scripts/publish.ps1 -CheckAuth**. A publicação verifica o acesso antes de alterar arquivos. As credenciais são usadas somente nos comandos de envio, sem alterar as configurações globais do Git.
-
-Para uma próxima release, altere a versão em Cargo.toml e atualize CHANGELOG.md; execute novamente publish.ps1. Use uma nova tag para cada versão; o script não sobrescreve tags existentes. A execução manual do workflow gera artefatos para teste; apenas tags publicam uma release.
-
-A pasta dist fica fora do histórico Git; os binários são distribuídos como anexos de Releases. O script usa uma lista explícita dos fontes publicáveis e exclui data, checks, shots e target. Não coloque seus bancos nem registros de alunos nas pastas de código.
-
-## Estrutura
-
-- **src/main.rs**: interface e navegação.
-- **src/model.rs**: questões, cálculos, validação, importação e sorteio.
-- **src/pdf.rs**: exportação de provas e gabaritos.
-- **src/updater.rs**: configuração e consulta de releases.
-- **scripts/**: compilação portátil e publicação.
-- **.github/workflows/**: automação Windows.
-- **MECHANICS.md** e **mechanics.json**: regras preservadas do programa fornecido.
-- **CREDITS.md**, **LICENSE** e **CHANGELOG.md**: créditos, licença e histórico.
-
-## Referências e limites
-
-[Gradepen](https://gradepen.com/p/) e [Minha Prova](https://www.minhaprova.com.br) servem como referências de produto para banco de questões, variações de prova, cabeçalhos e gabaritos. O Test Craft é uma implementação independente, sem vínculo com essas plataformas. Esta versão prioriza o fluxo local simples; não oferece correção óptica, TRI, inteligência artificial, aplicação online nem colaboração em nuvem.
-
-A interface é um redesenho solicitado do fluxo original em Python/Tkinter. Resultados numéricos usam português e duas casas decimais. O sorteio pode repetir valores entre alunos e não promete exclusividade global. O identificador, o banco e a lista permitem reproduzir versões nesta mesma versão do aplicativo; o registro JSON preserva os resultados exatos mesmo após editar o banco.
-
-HTML do Moodle é convertido em texto simples. Imagens externas ausentes são recusadas com aviso. Os PDFs usam Helvetica/Windows-1252 e Symbol para símbolos matemáticos e letras gregas comuns; outros símbolos recebem substituição simples. Não há renderização LaTeX.
-
-## Licença
-
-Código distribuído sob a **licença MIT**, disponível em LICENSE. Dependências mantêm suas próprias licenças; consulte CREDITS.md.
+Licença [MIT](LICENSE). Dependências e créditos em [CREDITS.md](CREDITS.md).

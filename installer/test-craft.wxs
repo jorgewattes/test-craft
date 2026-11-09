@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Product Id="*" Name="Test Craft" Language="1046" Version="$(var.Version)" Manufacturer="Test Craft" UpgradeCode="37074CDA-D187-4F27-B0C7-BB94AEE19443">
+    <Package InstallerVersion="500" Compressed="yes" InstallScope="perUser" Platform="x64" Description="Banco de questões e provas individualizadas" />
+    <MajorUpgrade DowngradeErrorMessage="Uma versão mais recente do Test Craft já está instalada." Schedule="afterInstallInitialize" />
+    <MediaTemplate EmbedCab="yes" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/jorgewattes/test-craft" />
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="LocalAppDataFolder">
+        <Directory Id="ProgramsFolder" Name="Programs">
+          <Directory Id="INSTALLFOLDER" Name="Test Craft">
+            <Component Id="AppExecutable" Guid="12DA43A6-DC04-5439-9F97-86F254688636" Win64="yes">
+              <File Id="TestCraftExe" Source="$(var.Stage)\test-craft.exe" />
+              <RegistryValue Root="HKCU" Key="Software\TestCraft" Name="Executable" Type="integer" Value="1" KeyPath="yes" />
+            </Component>
+            <Component Id="InstalledMarker" Guid="D878A4FF-A4D9-599E-89F9-DC0ABA738CA9" Win64="yes">
+              <File Id="InstalledMarkerFile" Source="$(var.Marker)" />
+              <RegistryValue Root="HKCU" Key="Software\TestCraft" Name="Marker" Type="integer" Value="1" KeyPath="yes" />
+              <RemoveFolder Id="RemoveInstallFolder" Directory="INSTALLFOLDER" On="uninstall" />
+              <RemoveFolder Id="RemoveProgramsFolder" Directory="ProgramsFolder" On="uninstall" />
+            </Component>
+            <Component Id="Readme" Guid="D82C829E-B495-5CB4-927F-872E3DC55B88" Win64="yes"><File Source="$(var.Stage)\README.md" /><RegistryValue Root="HKCU" Key="Software\TestCraft" Name="Readme" Type="integer" Value="1" KeyPath="yes" /></Component>
+            <Component Id="License" Guid="C540ED29-57D1-5A36-8754-D801DF7AE5A5" Win64="yes"><File Source="$(var.Stage)\LICENSE" /><RegistryValue Root="HKCU" Key="Software\TestCraft" Name="License" Type="integer" Value="1" KeyPath="yes" /></Component>
+            <Component Id="Credits" Guid="D9CE1F5E-E9AA-51D4-B12C-49391CF53C6B" Win64="yes"><File Source="$(var.Stage)\CREDITS.md" /><RegistryValue Root="HKCU" Key="Software\TestCraft" Name="Credits" Type="integer" Value="1" KeyPath="yes" /></Component>
+          </Directory>
+        </Directory>
+      </Directory>
+      <Directory Id="ProgramMenuFolder">
+        <Directory Id="StartMenuFolder" Name="Test Craft">
+          <Component Id="StartMenuShortcut" Guid="*" Win64="yes">
+            <Shortcut Id="LaunchTestCraft" Name="Test Craft" Target="[INSTALLFOLDER]test-craft.exe" WorkingDirectory="INSTALLFOLDER" />
+            <RemoveFolder Id="RemoveStartMenu" On="uninstall" />
+            <RegistryValue Root="HKCU" Key="Software\TestCraft" Name="Installed" Type="integer" Value="1" KeyPath="yes" />
+          </Component>
+        </Directory>
+      </Directory>
+    </Directory>
+    <Feature Id="MainFeature" Title="Test Craft" Level="1">
+      <ComponentRef Id="AppExecutable" /><ComponentRef Id="InstalledMarker" />
+      <ComponentRef Id="Readme" /><ComponentRef Id="License" /><ComponentRef Id="Credits" />
+      <ComponentRef Id="StartMenuShortcut" />
+    </Feature>
+    <WixVariable Id="WixUILicenseRtf" Value="installer\license.rtf" />
+    <UIRef Id="WixUI_Minimal" />
+  </Product>
+</Wix>

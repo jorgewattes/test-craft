@@ -13,18 +13,34 @@ jobs:
       - name: Build, test and package
         shell: pwsh
         run: ./scripts/build-release.ps1 -Repository "$env:GITHUB_REPOSITORY"
+      - name: Select release files
+        id: release
+        shell: pwsh
+        run: |
+          $version = [regex]::Match((Get-Content Cargo.toml -Raw), '(?m)^version = "([0-9]+\.[0-9]+\.[0-9]+)"').Groups[1].Value
+          if (-not $version) { throw 'Versao invalida no Cargo.toml.' }
+          "package=test-craft-$version-windows-x64" >> $env:GITHUB_OUTPUT
       - name: Keep Windows package
         uses: actions/upload-artifact@v4
         with:
           name: windows-release
+          if-no-files-found: error
           path: |
-            dist/*.zip
-            dist/*.sha256
+            dist/${{ steps.release.outputs.package }}.zip
+            dist/${{ steps.release.outputs.package }}.msi
+            dist/${{ steps.release.outputs.package }}.zip.sha256
+            dist/${{ steps.release.outputs.package }}.msi.sha256
+            dist/release-notes.md
       - name: Publish stable release
         if: github.ref_type == 'tag'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_PACKAGE: ${{ steps.release.outputs.package }}
         run: |
-          gh release create "$env:GITHUB_REF_NAME" dist/*.zip dist/*.sha256 --verify-tag --title "Test Craft $env:GITHUB_REF_NAME" --notes-file CHANGELOG.md
+          $assets = @("dist/$env:RELEASE_PACKAGE.msi", "dist/$env:RELEASE_PACKAGE.zip", "dist/$env:RELEASE_PACKAGE.msi.sha256", "dist/$env:RELEASE_PACKAGE.zip.sha256")
+          foreach ($asset in $assets) {
+            if (-not (Test-Path -LiteralPath $asset)) { throw "Pacote ausente: $asset" }
+          }
+          gh release create "$env:GITHUB_REF_NAME" @assets --verify-tag --title "Test Craft $env:GITHUB_REF_NAME" --notes-file dist/release-notes.md
           if ($LASTEXITCODE -ne 0) { throw 'Falha ao publicar release' }

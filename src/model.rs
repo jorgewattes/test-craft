@@ -53,7 +53,8 @@ impl Variable {
         if !self.values.is_empty() {
             self.values.len()
         } else {
-            ((self.max - self.min) * 10f64.powi(self.decimals.min(6) as i32)).round() as usize + 1
+            (((self.max - self.min) * 10f64.powi(self.decimals.min(6) as i32)).round() as usize)
+                .saturating_add(1)
         }
     }
     pub fn at(&self, i: usize) -> f64 {
@@ -86,6 +87,10 @@ pub struct Question {
     pub pictures: Vec<Picture>,
     pub variables: Vec<Variable>,
     pub answers: Vec<Answer>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub import_issues: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_xml: Option<String>,
 }
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Bank {
@@ -304,6 +309,11 @@ impl<'a> Parser<'a> {
                     _ => Err(format!("Função {name} não permitida.")),
                 };
             }
+            // MoodTest.py _eval_ast (0xc7b), context lookup at 0x118c:
+            // dataset values precede constants; calls above still use allowed functions.
+            if let Some(value) = self.vars.get(&name) {
+                return Ok(*value);
+            }
             return match name.as_str() {
                 "pi" => Ok(std::f64::consts::PI),
                 "e" => Ok(std::f64::consts::E),
@@ -485,6 +495,9 @@ pub fn preview(q: &Question, seed: u64) -> Result<Instance, String> {
     instance(q, values, &mut rng, false)
 }
 pub fn validate(q: &Question) -> Result<String, String> {
+    if !q.import_issues.is_empty() {
+        return Err(q.import_issues.join("\n"));
+    }
     if q.title.trim().is_empty() || q.category.trim().is_empty() || q.text.trim().is_empty() {
         return Err("Preencha título, categoria e enunciado.".into());
     }
@@ -522,12 +535,8 @@ pub fn validate(q: &Question) -> Result<String, String> {
                 .name
                 .chars()
                 .all(|c| c.is_ascii_alphanumeric() || c == '_')
-            || [
-                "pi", "e", "sqrt", "abs", "sin", "cos", "tan", "log", "ln", "log10", "exp",
-            ]
-            .contains(&v.name.as_str())
         {
-            return Err("Nomes de variável: comece com uma letra, use letras, números e _. Evite nomes de funções, pi e e.".into());
+            return Err("Nomes de variável: comece com uma letra, use letras, números e _.".into());
         }
         if !names.insert(v.name.clone()) {
             return Err("Há nomes de variável repetidos.".into());
@@ -737,9 +746,6 @@ pub fn read_bank(path: &Path) -> Result<Bank, String> {
             return Err("Banco com identificadores repetidos.".into());
         }
     }
-    for q in &bank.questions {
-        validate(q).map_err(|e| format!("{}: {e}", q.title))?;
-    }
     Ok(bank)
 }
 pub fn examples() -> Bank {
@@ -752,6 +758,8 @@ pub fn examples() -> Bank {
         answers: &[&str],
     ) -> Question {
         Question {
+            import_issues: vec![],
+            source_xml: None,
             id,
             title: title.into(),
             category: cat.into(),
@@ -866,6 +874,26 @@ struct XmlNode {
     children: Vec<XmlNode>,
 }
 impl XmlNode {
+    fn xml(&self) -> String {
+        fn escape(s: &str) -> String {
+            s.replace('&', "&amp;")
+                .replace('<', "&lt;")
+                .replace('>', "&gt;")
+                .replace('"', "&quot;")
+        }
+        let attrs = self
+            .attrs
+            .iter()
+            .map(|(k, v)| format!(" {k}=\"{}\"", escape(v)))
+            .collect::<String>();
+        format!(
+            "<{}{attrs}>{}{}</{}>",
+            self.tag,
+            escape(&self.text),
+            self.children.iter().map(Self::xml).collect::<String>(),
+            self.tag
+        )
+    }
     fn child(&self, tag: &str) -> Option<&Self> {
         self.children.iter().find(|x| x.tag == tag)
     }
@@ -883,6 +911,37 @@ impl XmlNode {
             c.find(tag, out)
         }
     }
+}
+fn xml_pictures(node: &XmlNode, issues: &mut Vec<String>) -> Vec<Picture> {
+    let mut pictures = vec![];
+    for file in node.children.iter().filter(|x| x.tag == "file") {
+        let name = file
+            .attrs
+            .get("name")
+            .cloned()
+            .unwrap_or_else(|| "Imagem".into());
+        match decode64(&file.text) {
+            Ok(data) => {
+                let picture = Picture { name, data };
+                if let Err(e) = check_picture(&picture) {
+                    issues.push(e);
+                }
+                pictures.push(picture);
+            }
+            Err(e) => issues.push(format!("{name}: {e}")),
+        }
+    }
+    if node
+        .child("text")
+        .map(|x| x.text.to_lowercase().contains("<img"))
+        .unwrap_or(false)
+        && pictures.is_empty()
+    {
+        issues.push(
+            "Imagem externa não incluída no XML. Anexe a imagem na edição da questão.".into(),
+        );
+    }
+    pictures
 }
 pub fn import_xml(path: &Path) -> Result<Bank, String> {
     use xml::reader::{EventReader, XmlEvent};
@@ -936,34 +995,14 @@ pub fn import_xml(path: &Path) -> Result<Bank, String> {
                 .to_owned();
             continue;
         }
+        let mut import_issues = vec![];
         if !["calculatedmulti", "multichoice"].contains(&kind) {
-            continue;
+            import_issues.push(format!("Tipo Moodle '{kind}' não suportado. Adapte a questão no editor; o XML original foi preservado."));
         }
-        let mut pictures = vec![];
-        if let Some(qtext) = n.child("questiontext") {
-            for file in qtext.children.iter().filter(|x| x.tag == "file") {
-                let picture = Picture {
-                    name: file
-                        .attrs
-                        .get("name")
-                        .cloned()
-                        .unwrap_or_else(|| "Imagem".into()),
-                    data: decode64(&file.text)?,
-                };
-                check_picture(&picture)?;
-                pictures.push(picture);
-            }
-            let text = qtext.nested("text");
-            let html = qtext
-                .child("text")
-                .map(|x| x.text.as_str())
-                .unwrap_or(&text);
-            if html.to_lowercase().contains("<img") && pictures.is_empty() {
-                return Err("O XML referencia uma imagem externa sem incluí-la. Anexe a imagem ao exportar no Moodle.".into());
-            }
-        }
-        /* if n.children.iter().filter(|x|x.tag=="answer").any(|a|a.child("text").map(|x|x.text.to_lowercase().contains("<img")).unwrap_or(false)){return Err("Este XML tem imagem em alternativa. Nesta versão, mova a imagem para o enunciado antes de importar.".into())}
-         */
+        let pictures = n
+            .child("questiontext")
+            .map(|node| xml_pictures(node, &mut import_issues))
+            .unwrap_or_default();
         let mut variables = vec![];
         let mut defs = vec![];
         // MoodTest.py carregar_questoes, source offset 0xc549: only
@@ -977,15 +1016,26 @@ pub fn import_xml(path: &Path) -> Result<Bank, String> {
             d.find("value", &mut vals);
             let values: Vec<f64> = vals
                 .iter()
-                .filter_map(|x| x.text.trim().replace(',', ".").parse().ok())
+                .filter_map(|x| match x.text.trim().replace(',', ".").parse::<f64>() {
+                    Ok(v) if v.is_finite() => Some(v),
+                    _ => {
+                        import_issues.push(format!(
+                            "Dataset {name}: valor inválido '{}'. Revise os valores.",
+                            x.text
+                        ));
+                        None
+                    }
+                })
                 .collect();
             if values.is_empty() {
-                return Err(format!("Dataset {name} sem valores."));
+                import_issues.push(format!(
+                    "Dataset {name} sem valores. Defina um intervalo no editor."
+                ));
             }
             variables.push(Variable {
                 name,
-                min: values.iter().copied().fold(f64::INFINITY, f64::min),
-                max: values.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+                min: values.iter().copied().reduce(f64::min).unwrap_or(0.),
+                max: values.iter().copied().reduce(f64::max).unwrap_or(0.),
                 decimals: 2,
                 values,
             });
@@ -995,31 +1045,15 @@ pub fn import_xml(path: &Path) -> Result<Bank, String> {
             .iter()
             .filter(|x| x.tag == "answer")
             .map(|a| {
-                let mut ap = vec![];
-                for file in a.children.iter().filter(|x| x.tag == "file") {
-                    let p = Picture {
-                        name: file
-                            .attrs
-                            .get("name")
-                            .cloned()
-                            .unwrap_or_else(|| "Imagem".into()),
-                        data: decode64(&file.text)?,
-                    };
-                    check_picture(&p)?;
-                    ap.push(p);
-                }
+                let ap = xml_pictures(a, &mut import_issues);
                 let raw = a.child("text").map(|x| x.text.clone()).unwrap_or_default();
-                if raw.to_lowercase().contains("<img") && ap.is_empty() {
-                    return Err("Uma alternativa contém imagem externa não incluída no XML.".into());
-                }
+                let fraction = match a.attrs.get("fraction").and_then(|x| x.trim().parse::<f64>().ok()) {
+                    Some(v) if v.is_finite() => v,
+                    _ => { import_issues.push("Pontuação de alternativa inválida. Revise quais respostas são corretas.".into()); 0. }
+                };
                 Ok(Answer {
                     text: plain(&raw)?,
-                    correct: a
-                        .attrs
-                        .get("fraction")
-                        .and_then(|x| x.trim().parse::<f64>().ok())
-                        .unwrap_or(0.)
-                        > 0.,
+                    correct: fraction > 0.,
                     pictures: ap,
                 })
             })
@@ -1027,17 +1061,23 @@ pub fn import_xml(path: &Path) -> Result<Bank, String> {
         let q = Question {
             id: questions.len() as u64 + 1,
             title: n.nested("name"),
-            category: category.clone(),
+            // carregar_questoes (0xc549), category branch at 0xc680:
+            // preserve an explicit category on the question, including its full path.
+            category: n
+                .child("category")
+                .map(|_| n.nested("category"))
+                .unwrap_or_else(|| category.clone()),
             text: plain(&n.nested("questiontext"))?,
             pictures,
             variables,
             answers,
+            import_issues,
+            source_xml: Some(n.xml()),
         };
-        validate(&q).map_err(|e| format!("{}: {e}", q.title))?;
         questions.push(q);
     }
     if questions.is_empty() {
-        return Err("Nenhuma questão calculatedmulti ou multichoice encontrada.".into());
+        return Err("Nenhuma questão encontrada no XML.".into());
     }
     Ok(Bank {
         version: 1,
@@ -1048,6 +1088,64 @@ pub fn import_xml(path: &Path) -> Result<Bank, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn imports_mixed_errors_and_reopens_saved_questions() {
+        let folder = Path::new(env!("CARGO_MANIFEST_DIR")).join("checks/tolerant-import");
+        std::fs::create_dir_all(&folder).unwrap();
+        let xml = folder.join("mixed.xml");
+        std::fs::write(&xml, r#"<quiz>
+          <question type="category"><category><text>$course$/Importadas</text></category></question>
+          <question type="calculatedmulti"><name><text>Formula</text></name><questiontext><text>{=1/0}</text></questiontext><answer fraction="100"><text>A</text></answer><answer fraction="0"><text>B</text></answer></question>
+          <question type="calculatedmulti"><name><text>Dataset</text></name><questiontext><text>{x}</text></questiontext><dataset_definitions><dataset_definition><name><text>x</text></name><dataset_items><dataset_item><value>NaN</value></dataset_item><dataset_item><value>erro</value></dataset_item></dataset_items></dataset_definition></dataset_definitions></question>
+          <question type="multichoice"><name><text>Imagem</text></name><questiontext><text><![CDATA[<img src="missing.png">]]></text><file name="bad.png">???</file></questiontext></question>
+          <question type="essay"><name><text>Outro tipo</text></name><questiontext><text>Explique</text></questiontext></question>
+          <question type="multichoice"><name><text>Valida</text></name><questiontext><text>Escolha A</text></questiontext><answer fraction="100"><text>A</text></answer><answer fraction="0"><text>B</text></answer></question>
+        </quiz>"#).unwrap();
+        let mut bank = import_xml(&xml).unwrap();
+        assert_eq!(bank.questions.len(), 5);
+        assert_eq!(
+            bank.questions
+                .iter()
+                .filter(|q| validate(q).is_err())
+                .count(),
+            4
+        );
+        assert!(validate(&bank.questions[4]).is_ok());
+        assert!(bank.questions[2]
+            .source_xml
+            .as_ref()
+            .unwrap()
+            .contains("???"));
+        assert!(bank.questions[3]
+            .source_xml
+            .as_ref()
+            .unwrap()
+            .contains("essay"));
+        let json = folder.join("bank.json");
+        save_bank(&json, &bank).unwrap();
+        let reopened = read_bank(&json).unwrap();
+        assert_eq!(reopened.questions.len(), 5);
+        assert_eq!(
+            reopened.questions[1].import_issues,
+            bank.questions[1].import_issues
+        );
+        assert!(validate(&reopened.questions[0]).is_err());
+        // Fixing the formula clears its error without losing the original source.
+        bank.questions[0].text = "Escolha A".into();
+        assert!(validate(&bank.questions[0]).is_ok());
+        // Questions produced in the editor can also be stored with missing fields.
+        let mut draft = examples().questions.remove(0);
+        draft.id = 99;
+        draft.title.clear();
+        draft.answers.clear();
+        bank.questions.push(draft);
+        save_bank(&json, &bank).unwrap();
+        let reopened = read_bank(&json).unwrap();
+        assert_eq!(reopened.questions.len(), 6);
+        assert!(validate(&reopened.questions[5]).is_err());
+        std::fs::write(&xml, "<quiz><question>").unwrap();
+        assert!(import_xml(&xml).is_err());
+    }
     #[test]
     fn numeric_grammar() {
         let v = BTreeMap::from([("a".into(), 4.)]);
@@ -1072,7 +1170,7 @@ mod tests {
     }
     #[test]
     fn matches_original_numeric_text_results() {
-        // Generated by scripts/inspect-original.py from the original's isolated
+        // Previously extracted from the original's isolated
         // numeric functions, without importing its GUI or installer.
         let mechanics: serde_json::Value =
             serde_json::from_str(include_str!("../mechanics.json")).unwrap();
@@ -1088,6 +1186,45 @@ mod tests {
                 "original source case: {text}"
             );
         }
+    }
+    #[test]
+    fn original_dataset_names_and_question_category() {
+        let mechanics: serde_json::Value =
+            serde_json::from_str(include_str!("../mechanics.json")).unwrap();
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("checks/original-category-test");
+        std::fs::create_dir_all(&dir).unwrap();
+        for case in mechanics["original"]["question_category_cases"]
+            .as_array()
+            .unwrap()
+        {
+            let path = dir.join("category.xml");
+            std::fs::write(&path, case["xml"].as_str().unwrap()).unwrap();
+            let bank = import_xml(&path).unwrap();
+            assert_eq!(
+                bank.questions[0].category,
+                case["expected"].as_str().unwrap()
+            );
+        }
+        let mut q = examples().questions.remove(0);
+        q.text = "Valor {=pi+e+sin+sqrt(9)}".into();
+        q.variables = ["pi", "e", "sin"]
+            .into_iter()
+            .map(|name| Variable {
+                name: name.into(),
+                min: 2.,
+                max: 2.,
+                decimals: 0,
+                values: vec![2.],
+            })
+            .collect();
+        q.answers[0].text = "{=pi+e+sin+sqrt(9)}".into();
+        q.answers[1].text = "Outra resposta".into();
+        q.answers.truncate(2);
+        assert!(
+            validate(&q).is_ok(),
+            "original permits dataset names matching constants/functions"
+        );
     }
     #[test]
     fn validation_catches_hidden_zero() {
