@@ -15,15 +15,15 @@ cargo test --locked
 if ($LASTEXITCODE -ne 0) { throw 'Os testes falharam.' }
 cargo rustc --release --locked -- -C target-feature=+crt-static
 if ($LASTEXITCODE -ne 0) { throw 'A compilacao falhou.' }
-$packageName = "caderno-$version-windows-x64"
+$packageName = "test-craft-$version-windows-x64"
 $stage = Join-Path $PWD "dist/$packageName"
 New-Item -ItemType Directory -Force -Path $stage | Out-Null
-Copy-Item -LiteralPath target/release/caderno.exe -Destination (Join-Path $stage 'caderno.exe') -Force
+Copy-Item -LiteralPath target/release/test-craft.exe -Destination (Join-Path $stage 'test-craft.exe') -Force
 foreach ($file in @('README.md', 'LICENSE', 'CREDITS.md', 'release-config.json')) {
     Copy-Item -LiteralPath $file -Destination $stage -Force
 }
 $zip = Join-Path $PWD "dist/$packageName.zip"
-$files = @('caderno.exe', 'README.md', 'LICENSE', 'CREDITS.md', 'release-config.json') | ForEach-Object { Join-Path $stage $_ }
+$files = @('test-craft.exe', 'README.md', 'LICENSE', 'CREDITS.md', 'release-config.json') | ForEach-Object { Join-Path $stage $_ }
 Compress-Archive -LiteralPath $files -DestinationPath $zip -Force
 $hash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
 [IO.File]::WriteAllText("$zip.sha256", "$hash  $packageName.zip" + [Environment]::NewLine, (New-Object Text.UTF8Encoding $false))

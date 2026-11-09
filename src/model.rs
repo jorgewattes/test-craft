@@ -144,8 +144,9 @@ pub fn fmt(x: f64) -> String {
         let n = digits[..target as usize].parse::<u64>().unwrap_or(0);
         n + u64::from(digits.as_bytes()[target as usize] >= b'5')
     };
-    let whole = (scaled / 100).to_string();
-    let fraction = scaled % 100;
+    let scale = 10u64.pow(DECIMALS as u32);
+    let whole = (scaled / scale).to_string();
+    let fraction = scaled % scale;
     let mut out = String::new();
     if x < 0. && scaled > 0 {
         out.push('-')
@@ -157,7 +158,7 @@ pub fn fmt(x: f64) -> String {
         out.push(c)
     }
     if fraction != 0 {
-        out.push_str(&format!(",{fraction:02}"))
+        out.push_str(&format!(",{fraction:0width$}", width = DECIMALS))
     }
     out
 }
@@ -320,7 +321,23 @@ pub fn eval(expr: &str, vars: &BTreeMap<String, f64>) -> Result<f64, String> {
     if expr.len() > 4096 {
         return Err("A fórmula deve ter até 4.096 caracteres.".into());
     }
-    let chars: Vec<_> = expr
+    // MoodTest.py:219 substitutes braced values as decimal text before parsing.
+    // In particular, {x}^2 with x=-2 means -2^2; ({x})^2 preserves the grouping.
+    let mut expanded = String::new();
+    let mut rest = expr;
+    while let Some(start) = rest.find('{') {
+        expanded.push_str(&rest[..start]);
+        rest = &rest[start + 1..];
+        let end = rest.find('}').ok_or("Feche a variável com }.")?;
+        let name = &rest[..end];
+        let value = vars
+            .get(name)
+            .ok_or(format!("Variável {{{name}}} não cadastrada."))?;
+        expanded.push_str(&value.to_string());
+        rest = &rest[end + 1..];
+    }
+    expanded.push_str(rest);
+    let chars: Vec<_> = expanded
         .chars()
         .filter(|c| !c.is_whitespace())
         .map(|c| if c == ',' { '.' } else { c })
@@ -344,9 +361,42 @@ pub fn eval(expr: &str, vars: &BTreeMap<String, f64>) -> Result<f64, String> {
     }
     Ok(n)
 }
-pub fn render(text: &str, vars: &BTreeMap<String, f64>) -> Result<String, String> {
+
+// MoodTest.py:197: remove ,00 (or more zeros) only when no decimal digit follows.
+fn remove_zero_decimals(text: &str) -> String {
+    let chars: Vec<_> = text.chars().collect();
     let mut out = String::new();
-    let mut rest = text;
+    let mut i = 0;
+    let mut after_digit = false;
+    while i < chars.len() {
+        if chars[i] == ',' && after_digit {
+            let mut end = i + 1;
+            while chars.get(end) == Some(&'0') {
+                end += 1;
+            }
+            if end > i + 1 && !chars.get(end).is_some_and(char::is_ascii_digit) {
+                i = end;
+                after_digit = false;
+                continue;
+            }
+        }
+        out.push(chars[i]);
+        after_digit = chars[i].is_ascii_digit();
+        i += 1;
+    }
+    out
+}
+
+pub fn render(text: &str, vars: &BTreeMap<String, f64>) -> Result<String, String> {
+    // Question._processar_texto (MoodTest.py:1075), before calculation/substitution.
+    let normalized = text
+        .replace(r"\(", "")
+        .replace(r"\)", "")
+        .replace(r"\Omega", "Ω")
+        .replace(r"\omega", "ω")
+        .replace(r"\ohm", "Ω");
+    let mut out = String::new();
+    let mut rest = normalized.as_str();
     while let Some(i) = rest.find('{') {
         out.push_str(&rest[..i]);
         rest = &rest[i + 1..];
@@ -376,7 +426,7 @@ pub fn render(text: &str, vars: &BTreeMap<String, f64>) -> Result<String, String
         rest = &rest[j + 1..];
     }
     out.push_str(rest);
-    Ok(out)
+    Ok(remove_zero_decimals(&out).trim().to_owned())
 }
 fn picture_hash(pictures: &[Picture]) -> u64 {
     use std::hash::{Hash, Hasher};
@@ -916,14 +966,18 @@ pub fn import_xml(path: &Path) -> Result<Bank, String> {
          */
         let mut variables = vec![];
         let mut defs = vec![];
-        n.find("dataset_definition", &mut defs);
+        // MoodTest.py carregar_questoes, source offset 0xc549: only
+        // calculatedmulti uses datasets; trim individual values before parsing.
+        if kind == "calculatedmulti" {
+            n.find("dataset_definition", &mut defs);
+        }
         for d in defs {
             let name = d.nested("name");
             let mut vals = vec![];
             d.find("value", &mut vals);
             let values: Vec<f64> = vals
                 .iter()
-                .filter_map(|x| x.text.replace(',', ".").parse().ok())
+                .filter_map(|x| x.text.trim().replace(',', ".").parse().ok())
                 .collect();
             if values.is_empty() {
                 return Err(format!("Dataset {name} sem valores."));
@@ -963,7 +1017,7 @@ pub fn import_xml(path: &Path) -> Result<Bank, String> {
                     correct: a
                         .attrs
                         .get("fraction")
-                        .and_then(|x| x.parse::<f64>().ok())
+                        .and_then(|x| x.trim().parse::<f64>().ok())
                         .unwrap_or(0.)
                         > 0.,
                     pictures: ap,
@@ -1015,6 +1069,25 @@ mod tests {
             render("Valor {= {a}^2/2} N", &BTreeMap::from([("a".into(), 4.)])).unwrap(),
             "Valor 8 N"
         );
+    }
+    #[test]
+    fn matches_original_numeric_text_results() {
+        // Generated by scripts/inspect-original.py from the original's isolated
+        // numeric functions, without importing its GUI or installer.
+        let mechanics: serde_json::Value =
+            serde_json::from_str(include_str!("../mechanics.json")).unwrap();
+        let cases = mechanics["original"]["reference_cases"].as_array().unwrap();
+        assert!(!cases.is_empty());
+        for case in cases {
+            let variables: BTreeMap<String, f64> =
+                serde_json::from_value(case["variables"].clone()).unwrap();
+            let text = case["text"].as_str().unwrap();
+            assert_eq!(
+                render(text, &variables).unwrap(),
+                case["expected"].as_str().unwrap(),
+                "original source case: {text}"
+            );
+        }
     }
     #[test]
     fn validation_catches_hidden_zero() {
@@ -1076,6 +1149,57 @@ mod tests {
                     .unwrap()
                     .text
                     .starts_with(&fmt(expected)));
+            }
+        }
+    }
+    #[test]
+    fn moodle_original_dataset_and_score_rules() {
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("checks/original-import-test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("moodle.xml");
+        let mechanics: serde_json::Value =
+            serde_json::from_str(include_str!("../mechanics.json")).unwrap();
+        for case in mechanics["original"]["answer_score_cases"]
+            .as_array()
+            .unwrap()
+        {
+            let scores = case["fractions"].as_array().unwrap();
+            let answers: String = scores
+                .iter()
+                .enumerate()
+                .map(|(i, score)| {
+                    format!(
+                        "<answer fraction=\"{}\"><text>Alternativa {i}</text></answer>",
+                        score.as_str().unwrap()
+                    )
+                })
+                .collect();
+            // The bank requires a correct choice. Add one after the oracle cases,
+            // so empty oracle results still exercise the importer's score parsing.
+            let answers = format!("{answers}<answer fraction=\"100\"><text>Final</text></answer>");
+            for kind in ["calculatedmulti", "multichoice"] {
+                let xml = format!(
+                    r#"<quiz><question type="{kind}"><name><text>Regras originais</text></name><questiontext><text>Escolha</text></questiontext>{answers}<dataset_definitions><dataset_definition><name><text>x</text></name><dataset_items><dataset_item><value> 2,5 </value></dataset_item><dataset_item><value>2,5</value></dataset_item><dataset_item><value> 4 </value></dataset_item><dataset_item><value>invalid</value></dataset_item></dataset_items></dataset_definition></dataset_definitions></question></quiz>"#
+                );
+                std::fs::write(&path, xml).unwrap();
+                let bank = import_xml(&path).unwrap();
+                let q = &bank.questions[0];
+                let actual: Vec<usize> = q
+                    .answers
+                    .iter()
+                    .take(scores.len())
+                    .enumerate()
+                    .filter_map(|(i, a)| a.correct.then_some(i))
+                    .collect();
+                let expected: Vec<usize> =
+                    serde_json::from_value(case["expected"].clone()).unwrap();
+                assert_eq!(actual, expected);
+                if kind == "calculatedmulti" {
+                    assert_eq!(q.variables[0].values, vec![2.5, 2.5, 4.]);
+                } else {
+                    assert!(q.variables.is_empty());
+                }
             }
         }
     }

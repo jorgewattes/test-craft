@@ -97,7 +97,7 @@ fn parse_release(bytes: &[u8], repo: &str, current: &str) -> Result<Option<Relea
     if !r
         .assets
         .iter()
-        .any(|a| a.name == format!("caderno-{number}-windows-x64.zip") && a.state == "uploaded")
+        .any(|a| a.name == format!("test-craft-{number}-windows-x64.zip") && a.state == "uploaded")
     {
         return Err(format!(
             "A versão {number} existe, mas o pacote Windows ainda não está disponível."
@@ -125,7 +125,7 @@ fn fetch(repo: &str) -> Result<Option<Release>, String> {
         "--max-filesize",
         "2097152",
         "--user-agent",
-        concat!("Caderno/", env!("CARGO_PKG_VERSION")),
+        concat!("TestCraft/", env!("CARGO_PKG_VERSION")),
         "--header",
         "Accept: application/vnd.github+json",
         "--header",
@@ -251,13 +251,13 @@ impl Updater {
 mod tests {
     use super::*;
     fn payload(tag: &str) -> Vec<u8> {
-        serde_json::to_vec(&serde_json::json!({"tag_name":tag,"assets":[{"name":format!("caderno-{}-windows-x64.zip",tag.trim_start_matches('v')),"state":"uploaded"}]})).unwrap()
+        serde_json::to_vec(&serde_json::json!({"tag_name":tag,"assets":[{"name":format!("test-craft-{}-windows-x64.zip",tag.trim_start_matches('v')),"state":"uploaded"}]})).unwrap()
     }
     #[test]
     fn accepts_only_github_repositories() {
         assert_eq!(
-            repository(" https://github.com/escola/caderno/releases/latest/ ").unwrap(),
-            "escola/caderno"
+            repository(" https://github.com/escola/test-craft/releases/latest/ ").unwrap(),
+            "escola/test-craft"
         );
         for bad in [
             "",
@@ -301,10 +301,13 @@ mod tests {
     }
     #[test]
     fn uses_trusted_release_url() {
-        let r = parse_release(&payload("v1.2.0"), "escola/caderno", "0.2.0")
+        let r = parse_release(&payload("v1.2.0"), "escola/test-craft", "0.2.0")
             .unwrap()
             .unwrap();
-        assert_eq!(r.url, "https://github.com/escola/caderno/releases/latest");
+        assert_eq!(
+            r.url,
+            "https://github.com/escola/test-craft/releases/latest"
+        );
     }
 
     #[test]
@@ -313,15 +316,19 @@ mod tests {
         std::fs::create_dir_all(&folder).unwrap();
         let mut updater = Updater::load(&folder);
         updater
-            .save(&folder, "https://github.com/escola/caderno/releases", false)
+            .save(
+                &folder,
+                "https://github.com/escola/test-craft/releases",
+                false,
+            )
             .unwrap();
         let saved = Updater::load(&folder);
-        assert_eq!(saved.settings.repository, "escola/caderno");
+        assert_eq!(saved.settings.repository, "escola/test-craft");
         assert!(!saved.settings.automatic);
         assert!(updater
             .save(&folder, "https://evil.com/repo", true)
             .is_err());
-        assert_eq!(updater.settings.repository, "escola/caderno");
+        assert_eq!(updater.settings.repository, "escola/test-craft");
         assert!(!Updater::load(&folder).settings.automatic);
     }
     #[test]
@@ -334,7 +341,7 @@ mod tests {
         updater.receiver = Some(rx);
         tx.send(Ok(Some(Release {
             version: "1.0.0".into(),
-            url: "https://github.com/escola/caderno/releases/latest".into(),
+            url: "https://github.com/escola/test-craft/releases/latest".into(),
         })))
         .unwrap();
         updater.tick(&context);

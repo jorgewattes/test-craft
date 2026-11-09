@@ -5,7 +5,7 @@
       "name": "text decimal places",
       "group": "format",
       "value": 2,
-      "source": "Python _processar_texto L1087 / _replace_calculated_blocks L478"
+      "source": "Python Question._processar_texto L1087, source offset 0x8f5a / _replace_calculated_blocks L480, source offset 0x3984"
     },
     {
       "name": "rounding",
@@ -16,23 +16,23 @@
     {
       "name": "page width",
       "group": "pdf",
-      "value": 595.2756,
+      "value": 595.2755905511812,
       "unit": "pt",
-      "source": "Python Exam.export_pdf L1115 A4"
+      "source": "Python Exam.export_pdf L1115, source offset 0x95d0: 210 / 25.4 * 72"
     },
     {
       "name": "page height",
       "group": "pdf",
-      "value": 841.8898,
+      "value": 841.8897637795276,
       "unit": "pt",
-      "source": "Python Exam.export_pdf L1115 A4"
+      "source": "Python Exam.export_pdf L1115, source offset 0x95d0: 297 / 25.4 * 72"
     },
     {
       "name": "page margin",
       "group": "pdf",
-      "value": 56.6929,
+      "value": 56.69291338582677,
       "unit": "pt",
-      "source": "Python Exam.export_pdf L1120 2cm"
+      "source": "Python Exam.export_pdf L1120, source offset 0x95d0: 2 / 2.54 * 72"
     },
     {
       "name": "shuffle alternatives",
@@ -69,6 +69,1624 @@
       "group": "new authoring",
       "value": 256,
       "estimated": true
+    },
+    {
+      "name": "negative braced substitution",
+      "group": "calculation",
+      "value": "text substitution before parsing, without parentheses",
+      "source": "Python avaliar_expressao_com_variaveis L219, source offset 0x1aa2"
+    },
+    {
+      "name": "math text cleanup",
+      "group": "format",
+      "value": "remove math delimiters, normalize Omega/omega/ohm, trim and remove zero decimals",
+      "source": "Python Question._processar_texto L1075, source offset 0x8f5a / remover_decimais_nulos L197, source offset 0x17ac"
     }
-  ]
+  ],
+  "analysis": {
+    "checked_on": "2026-11-09",
+    "mode": "deep",
+    "native_pseudocode_functions_awaited": 21,
+    "native_result": "not_supported: Unknown file magic (Python source)",
+    "attempt_log": "checks/native-analysis-attempts.json",
+    "fallback": "direct source review with AST call references and byte offsets"
+  },
+  "original": {
+    "path": "C:\\dev\\MoodTest\\MoodTest.py",
+    "sha256": "c2b9ff9719e5ca4b7c837a22da5eae6a3bd2811d9eb17ef6895a730c038f1541",
+    "kind": "Python source",
+    "native_addresses_available": false,
+    "location_units": "zero-based byte offsets at def; source lines are one-based",
+    "functions": [
+      {
+        "function": "_ensure_pillow_available",
+        "line": 30,
+        "end_line": 72,
+        "file_offset": "0x2a8",
+        "native_address": null,
+        "calls": [
+          "ImportError",
+          "_prioritize_user_site",
+          "importlib.invalidate_caches",
+          "key.startswith",
+          "list",
+          "os.path.isdir",
+          "site.getusersitepackages",
+          "subprocess.check_call",
+          "sys.modules.pop",
+          "sys.path.insert",
+          "sys.path.remove"
+        ]
+      },
+      {
+        "function": "_ensure_pillow_available._prioritize_user_site",
+        "line": 32,
+        "end_line": 37,
+        "file_offset": "0x31b",
+        "native_address": null,
+        "calls": [
+          "os.path.isdir",
+          "site.getusersitepackages",
+          "sys.path.insert",
+          "sys.path.remove"
+        ]
+      },
+      {
+        "function": "_eval_ast",
+        "line": 125,
+        "end_line": 158,
+        "file_offset": "0xc7b",
+        "native_address": null,
+        "calls": [
+          "ValueError",
+          "_ALLOWED_OPS.get",
+          "_eval_ast",
+          "any",
+          "fn",
+          "isinstance",
+          "op",
+          "type"
+        ]
+      },
+      {
+        "function": "_preprocess_expr",
+        "line": 160,
+        "end_line": 171,
+        "file_offset": "0x128e",
+        "native_address": null,
+        "calls": [
+          "expr.strip",
+          "re.sub",
+          "s.replace"
+        ]
+      },
+      {
+        "function": "avaliar_expressao",
+        "line": 173,
+        "end_line": 177,
+        "file_offset": "0x13bd",
+        "native_address": null,
+        "calls": [
+          "_eval_ast",
+          "_preprocess_expr",
+          "ast.parse"
+        ]
+      },
+      {
+        "function": "formatar_numero_pt",
+        "line": 179,
+        "end_line": 191,
+        "file_offset": "0x1501",
+        "native_address": null,
+        "calls": [
+          "Decimal",
+          "Decimal('1').scaleb",
+          "decimal_x.quantize",
+          "f'{inteiro:,}'.replace",
+          "format",
+          "formatado.replace",
+          "formatado.replace(',', '_').replace",
+          "formatado.replace(',', '_').replace('.', ',').replace",
+          "int",
+          "max",
+          "quantizado.to_integral_value",
+          "str"
+        ]
+      },
+      {
+        "function": "remover_decimais_nulos",
+        "line": 197,
+        "end_line": 201,
+        "file_offset": "0x17ac",
+        "native_address": null,
+        "calls": [
+          "_DECIMAL_ZERO_PATTERN.sub"
+        ]
+      },
+      {
+        "function": "_extract_variable_names",
+        "line": 206,
+        "end_line": 216,
+        "file_offset": "0x18c2",
+        "native_address": null,
+        "calls": [
+          "_PLACEHOLDER_PATTERN.sub",
+          "_preprocess_expr",
+          "ast.parse",
+          "ast.walk",
+          "isinstance",
+          "m.group",
+          "nomes.append"
+        ]
+      },
+      {
+        "function": "avaliar_expressao_com_variaveis",
+        "line": 219,
+        "end_line": 235,
+        "file_offset": "0x1aa2",
+        "native_address": null,
+        "calls": [
+          "ValueError",
+          "_PLACEHOLDER_PATTERN.sub",
+          "_extract_variable_names",
+          "avaliar_expressao",
+          "expr.replace",
+          "m.group",
+          "max",
+          "set",
+          "str",
+          "usados.add",
+          "usados.update",
+          "valores.items"
+        ]
+      },
+      {
+        "function": "avaliar_expressao_com_variaveis._repl",
+        "line": 222,
+        "end_line": 227,
+        "file_offset": "0x1b24",
+        "native_address": null,
+        "calls": [
+          "ValueError",
+          "m.group",
+          "str",
+          "usados.add"
+        ]
+      },
+      {
+        "function": "contar_casas_decimais",
+        "line": 238,
+        "end_line": 256,
+        "file_offset": "0x1de2",
+        "native_address": null,
+        "calls": [
+          "(valor_str or '').strip",
+          "contar_casas_decimais",
+          "int",
+          "len",
+          "max",
+          "re.sub",
+          "valor_str.lower",
+          "valor_str.lower().partition",
+          "valor_str.split"
+        ]
+      },
+      {
+        "function": "_css_size_to_points",
+        "line": 298,
+        "end_line": 319,
+        "file_offset": "0x24b4",
+        "native_address": null,
+        "calls": [
+          "(match.group('unit') or 'px').lower",
+          "CSS_SIZE_PATTERN.search",
+          "float",
+          "match.group"
+        ]
+      },
+      {
+        "function": "_dimensions_from_attrs",
+        "line": 322,
+        "end_line": 340,
+        "file_offset": "0x274b",
+        "native_address": null,
+        "calls": [
+          "STYLE_DIMENSION_PATTERN.findall",
+          "_css_size_to_points",
+          "attrs.get",
+          "prop.lower"
+        ]
+      },
+      {
+        "function": "_font_search_dirs",
+        "line": 344,
+        "end_line": 360,
+        "file_offset": "0x2a62",
+        "native_address": null,
+        "calls": [
+          "Path",
+          "Path(__file__).resolve",
+          "Path.home",
+          "candidates.append",
+          "candidates.extend",
+          "lru_cache",
+          "os.environ.get",
+          "p.exists"
+        ]
+      },
+      {
+        "function": "_find_font_file",
+        "line": 363,
+        "end_line": 370,
+        "file_offset": "0x2cf2",
+        "native_address": null,
+        "calls": [
+          "_font_search_dirs",
+          "candidate.exists"
+        ]
+      },
+      {
+        "function": "_register_primary_font",
+        "line": 376,
+        "end_line": 405,
+        "file_offset": "0x2e29",
+        "native_address": null,
+        "calls": [
+          "TTFont",
+          "_find_font_file",
+          "pdfmetrics.getRegisteredFontNames",
+          "pdfmetrics.registerFont",
+          "pdfmetrics.registerFontFamily",
+          "registered.add",
+          "set",
+          "str"
+        ]
+      },
+      {
+        "function": "_guess_mime_from_extension",
+        "line": 430,
+        "end_line": 432,
+        "file_offset": "0x353c",
+        "native_address": null,
+        "calls": [
+          "_EXTENSION_MIME.get",
+          "os.path.splitext",
+          "os.path.splitext(path.split('?', 1)[0])[1].lower",
+          "path.split"
+        ]
+      },
+      {
+        "function": "_download_image_from_url",
+        "line": 435,
+        "end_line": 453,
+        "file_offset": "0x35f2",
+        "native_address": null,
+        "calls": [
+          "_guess_mime_from_extension",
+          "hasattr",
+          "len",
+          "mime.split",
+          "mime.split(';', 1)[0].strip",
+          "mime.startswith",
+          "response.headers.get",
+          "response.headers.get_content_type",
+          "response.read",
+          "urllib.request.Request",
+          "urllib.request.urlopen"
+        ]
+      },
+      {
+        "function": "_replace_calculated_blocks",
+        "line": 457,
+        "end_line": 491,
+        "file_offset": "0x3984",
+        "native_address": null,
+        "calls": [
+          "''.join",
+          "avaliar_expressao_com_variaveis",
+          "formatar_numero_pt",
+          "len",
+          "remover_decimais_nulos",
+          "resultado.append",
+          "texto.find",
+          "texto[inicio + 2:j].strip"
+        ]
+      },
+      {
+        "function": "IndentedFlowable.__init__",
+        "line": 495,
+        "end_line": 498,
+        "file_offset": "0x3e9e",
+        "native_address": null,
+        "calls": [
+          "super",
+          "super().__init__"
+        ]
+      },
+      {
+        "function": "IndentedFlowable.wrap",
+        "line": 500,
+        "end_line": 502,
+        "file_offset": "0x3f38",
+        "native_address": null,
+        "calls": [
+          "self.flowable.wrap"
+        ]
+      },
+      {
+        "function": "IndentedFlowable.draw",
+        "line": 504,
+        "end_line": 508,
+        "file_offset": "0x3fe7",
+        "native_address": null,
+        "calls": [
+          "self.canv.restoreState",
+          "self.canv.saveState",
+          "self.canv.translate",
+          "self.flowable.drawOn"
+        ]
+      },
+      {
+        "function": "StudentNameSetter.__init__",
+        "line": 514,
+        "end_line": 516,
+        "file_offset": "0x4105",
+        "native_address": null,
+        "calls": [
+          "super",
+          "super().__init__"
+        ]
+      },
+      {
+        "function": "StudentNameSetter.wrap",
+        "line": 518,
+        "end_line": 519,
+        "file_offset": "0x4179",
+        "native_address": null,
+        "calls": []
+      },
+      {
+        "function": "StudentNameSetter.draw",
+        "line": 521,
+        "end_line": 525,
+        "file_offset": "0x41be",
+        "native_address": null,
+        "calls": [
+          "getattr"
+        ]
+      },
+      {
+        "function": "StudentPageBreak.__init__",
+        "line": 531,
+        "end_line": 533,
+        "file_offset": "0x431f",
+        "native_address": null,
+        "calls": [
+          "super",
+          "super().__init__"
+        ]
+      },
+      {
+        "function": "StudentPageBreak.draw",
+        "line": 535,
+        "end_line": 542,
+        "file_offset": "0x4393",
+        "native_address": null,
+        "calls": [
+          "getattr",
+          "super",
+          "super().draw"
+        ]
+      },
+      {
+        "function": "_create_pdf_styles",
+        "line": 547,
+        "end_line": 688,
+        "file_offset": "0x4509",
+        "native_address": null,
+        "calls": [
+          "ParagraphStyle",
+          "getSampleStyleSheet",
+          "max",
+          "styles.add"
+        ]
+      },
+      {
+        "function": "_load_default_logo_bytes",
+        "line": 701,
+        "end_line": 710,
+        "file_offset": "0x57e8",
+        "native_address": null,
+        "calls": [
+          "Path",
+          "Path(__file__).resolve",
+          "logo_path.read_bytes",
+          "lru_cache"
+        ]
+      },
+      {
+        "function": "_draw_student_name_header",
+        "line": 713,
+        "end_line": 739,
+        "file_offset": "0x5961",
+        "native_address": null,
+        "calls": [
+          "canvas.drawString",
+          "canvas.restoreState",
+          "canvas.saveState",
+          "canvas.setFont",
+          "getattr"
+        ]
+      },
+      {
+        "function": "_escape_paragraph_text",
+        "line": 742,
+        "end_line": 744,
+        "file_offset": "0x5d21",
+        "native_address": null,
+        "calls": [
+          "(text or '').replace",
+          "(text or '').replace('\\r\\n', '\\n').replace",
+          "escape",
+          "escape(texto).replace"
+        ]
+      },
+      {
+        "function": "_scale_image",
+        "line": 750,
+        "end_line": 759,
+        "file_offset": "0x5dcf",
+        "native_address": null,
+        "calls": [
+          "min"
+        ]
+      },
+      {
+        "function": "_make_image_flowable",
+        "line": 762,
+        "end_line": 792,
+        "file_offset": "0x5f7b",
+        "native_address": null,
+        "calls": [
+          "Image",
+          "_scale_image",
+          "io.BytesIO"
+        ]
+      },
+      {
+        "function": "_segments_to_flowables",
+        "line": 795,
+        "end_line": 813,
+        "file_offset": "0x6391",
+        "native_address": null,
+        "calls": [
+          "Paragraph",
+          "_escape_paragraph_text",
+          "_make_image_flowable",
+          "flowables.append"
+        ]
+      },
+      {
+        "function": "_render_alternative",
+        "line": 816,
+        "end_line": 845,
+        "file_offset": "0x66f8",
+        "native_address": null,
+        "calls": [
+          "KeepTogether",
+          "Paragraph",
+          "Spacer",
+          "_escape_paragraph_text",
+          "_make_image_flowable",
+          "items.append"
+        ]
+      },
+      {
+        "function": "_render_question_block",
+        "line": 850,
+        "end_line": 858,
+        "file_offset": "0x6c32",
+        "native_address": null,
+        "calls": [
+          "Paragraph",
+          "_render_alternative",
+          "_segments_to_flowables",
+          "bloco.append",
+          "bloco.extend",
+          "len",
+          "letters_for",
+          "zip"
+        ]
+      },
+      {
+        "function": "_build_header_flow",
+        "line": 862,
+        "end_line": 944,
+        "file_offset": "0x6e17",
+        "native_address": null,
+        "calls": [
+          "KeepTogether",
+          "Paragraph",
+          "Spacer",
+          "Table",
+          "TableStyle",
+          "_field",
+          "_load_default_logo_bytes",
+          "_make_image_flowable",
+          "detalhes.setStyle",
+          "dict",
+          "escape",
+          "info.get",
+          "isinstance",
+          "str",
+          "str(info.get('instituicao', '')).strip",
+          "str(raw).strip"
+        ]
+      },
+      {
+        "function": "_build_header_flow._field",
+        "line": 865,
+        "end_line": 873,
+        "file_offset": "0x6ec1",
+        "native_address": null,
+        "calls": [
+          "Paragraph",
+          "escape",
+          "info.get",
+          "isinstance",
+          "str",
+          "str(raw).strip"
+        ]
+      },
+      {
+        "function": "letters_for",
+        "line": 952,
+        "end_line": 966,
+        "file_offset": "0x7c98",
+        "native_address": null,
+        "calls": [
+          "chr",
+          "len",
+          "letters.append"
+        ]
+      },
+      {
+        "function": "add_blank_answer_tables",
+        "line": 968,
+        "end_line": 990,
+        "file_offset": "0x7e27",
+        "native_address": null,
+        "calls": [
+          "Paragraph",
+          "Spacer",
+          "Table",
+          "TableStyle",
+          "flow.append",
+          "int",
+          "len",
+          "min",
+          "range",
+          "table.setStyle"
+        ]
+      },
+      {
+        "function": "Dataset.__init__",
+        "line": 997,
+        "end_line": 999,
+        "file_offset": "0x82b2",
+        "native_address": null,
+        "calls": []
+      },
+      {
+        "function": "Dataset.sample",
+        "line": 1001,
+        "end_line": 1002,
+        "file_offset": "0x832c",
+        "native_address": null,
+        "calls": [
+          "random.choice"
+        ]
+      },
+      {
+        "function": "Question.__init__",
+        "line": 1010,
+        "end_line": 1016,
+        "file_offset": "0x8415",
+        "native_address": null,
+        "calls": []
+      },
+      {
+        "function": "Question._iter_all_segments",
+        "line": 1018,
+        "end_line": 1023,
+        "file_offset": "0x85f8",
+        "native_address": null,
+        "calls": []
+      },
+      {
+        "function": "Question.missing_image_descriptions",
+        "line": 1025,
+        "end_line": 1031,
+        "file_offset": "0x86c4",
+        "native_address": null,
+        "calls": [
+          "faltantes.append",
+          "self._iter_all_segments"
+        ]
+      },
+      {
+        "function": "Question.has_missing_images",
+        "line": 1033,
+        "end_line": 1034,
+        "file_offset": "0x8829",
+        "native_address": null,
+        "calls": [
+          "bool",
+          "self.missing_image_descriptions"
+        ]
+      },
+      {
+        "function": "Question.instantiate",
+        "line": 1036,
+        "end_line": 1051,
+        "file_offset": "0x888e",
+        "native_address": null,
+        "calls": [
+          "ds.sample",
+          "enumerate",
+          "list",
+          "random.shuffle",
+          "self._render_segments",
+          "self.datasets.items"
+        ]
+      },
+      {
+        "function": "Question._render_segments",
+        "line": 1053,
+        "end_line": 1073,
+        "file_offset": "0x8b65",
+        "native_address": null,
+        "calls": [
+          "ContentSegment",
+          "bool",
+          "processados.append",
+          "self._processar_texto"
+        ]
+      },
+      {
+        "function": "Question._processar_texto",
+        "line": 1075,
+        "end_line": 1092,
+        "file_offset": "0x8f5a",
+        "native_address": null,
+        "calls": [
+          "PLACEHOLDER_REGEX.sub",
+          "_replace_calculated_blocks",
+          "formatar_numero_pt",
+          "match.group",
+          "remover_decimais_nulos",
+          "texto.replace",
+          "texto.replace('\\\\(', '').replace",
+          "texto.strip"
+        ]
+      },
+      {
+        "function": "Exam.__init__",
+        "line": 1097,
+        "end_line": 1100,
+        "file_offset": "0x926d",
+        "native_address": null,
+        "calls": []
+      },
+      {
+        "function": "Exam._story",
+        "line": 1102,
+        "end_line": 1113,
+        "file_offset": "0x9347",
+        "native_address": null,
+        "calls": [
+          "Paragraph",
+          "Spacer",
+          "StudentNameSetter",
+          "_build_header_flow",
+          "_render_question_block",
+          "add_blank_answer_tables",
+          "enumerate",
+          "escape",
+          "len",
+          "story.append",
+          "story.extend"
+        ]
+      },
+      {
+        "function": "Exam.export_pdf",
+        "line": 1115,
+        "end_line": 1132,
+        "file_offset": "0x95d0",
+        "native_address": null,
+        "calls": [
+          "SimpleDocTemplate",
+          "doc.build",
+          "self._story",
+          "str"
+        ]
+      },
+      {
+        "function": "_collect_files",
+        "line": 1139,
+        "end_line": 1160,
+        "file_offset": "0x98c9",
+        "native_address": null,
+        "calls": [
+          "(fnode.text or '').strip",
+          "base64.b64decode",
+          "f'{caminho}/{nome}'.replace",
+          "f'{caminho}/{nome}'.replace('//', '/').strip",
+          "fnode.attrib.get",
+          "node.findall"
+        ]
+      },
+      {
+        "function": "MoodleHTMLParser.__init__",
+        "line": 1166,
+        "end_line": 1172,
+        "file_offset": "0x9cbb",
+        "native_address": null,
+        "calls": [
+          "super",
+          "super().__init__"
+        ]
+      },
+      {
+        "function": "MoodleHTMLParser.handle_starttag",
+        "line": 1174,
+        "end_line": 1192,
+        "file_offset": "0x9df7",
+        "native_address": null,
+        "calls": [
+          "attrs_dict.get",
+          "k.lower",
+          "self._buffer.append",
+          "self._emit_text",
+          "self._ensure_newline",
+          "self._resolve_image",
+          "self.segments.append",
+          "tag.lower"
+        ]
+      },
+      {
+        "function": "MoodleHTMLParser.handle_endtag",
+        "line": 1194,
+        "end_line": 1200,
+        "file_offset": "0xa0ea",
+        "native_address": null,
+        "calls": [
+          "self._ensure_newline",
+          "tag.lower"
+        ]
+      },
+      {
+        "function": "MoodleHTMLParser.handle_startendtag",
+        "line": 1202,
+        "end_line": 1207,
+        "file_offset": "0xa1d2",
+        "native_address": null,
+        "calls": [
+          "self._buffer.append",
+          "self.handle_starttag",
+          "tag.lower"
+        ]
+      },
+      {
+        "function": "MoodleHTMLParser.handle_data",
+        "line": 1209,
+        "end_line": 1212,
+        "file_offset": "0xa2a8",
+        "native_address": null,
+        "calls": [
+          "self._buffer.append"
+        ]
+      },
+      {
+        "function": "MoodleHTMLParser.handle_entityref",
+        "line": 1214,
+        "end_line": 1215,
+        "file_offset": "0xa319",
+        "native_address": null,
+        "calls": [
+          "self._buffer.append",
+          "unescape"
+        ]
+      },
+      {
+        "function": "MoodleHTMLParser.handle_charref",
+        "line": 1217,
+        "end_line": 1218,
+        "file_offset": "0xa376",
+        "native_address": null,
+        "calls": [
+          "self._buffer.append",
+          "unescape"
+        ]
+      },
+      {
+        "function": "MoodleHTMLParser.close",
+        "line": 1220,
+        "end_line": 1222,
+        "file_offset": "0xa3d2",
+        "native_address": null,
+        "calls": [
+          "self._emit_text",
+          "super",
+          "super().close"
+        ]
+      },
+      {
+        "function": "MoodleHTMLParser._ensure_newline",
+        "line": 1224,
+        "end_line": 1226,
+        "file_offset": "0xa41e",
+        "native_address": null,
+        "calls": [
+          "self._buffer.append",
+          "self._buffer[-1].endswith"
+        ]
+      },
+      {
+        "function": "MoodleHTMLParser._emit_text",
+        "line": 1230,
+        "end_line": 1245,
+        "file_offset": "0xa4ad",
+        "native_address": null,
+        "calls": [
+          "''.join",
+          "ContentSegment",
+          "cleaned.strip",
+          "re.sub",
+          "self._buffer.clear",
+          "self._split_text_for_image_links",
+          "self.segments.append",
+          "unescape",
+          "unescape(raw_text).replace",
+          "unescape(raw_text).replace('\\r', '').replace"
+        ]
+      },
+      {
+        "function": "MoodleHTMLParser._split_text_for_image_links",
+        "line": 1247,
+        "end_line": 1267,
+        "file_offset": "0xa744",
+        "native_address": null,
+        "calls": [
+          "ContentSegment",
+          "IMAGE_URL_PATTERN.finditer",
+          "match.group",
+          "match.span",
+          "segments.append",
+          "self._segment_from_link"
+        ]
+      },
+      {
+        "function": "MoodleHTMLParser._segment_from_link",
+        "line": 1269,
+        "end_line": 1284,
+        "file_offset": "0xaa8e",
+        "native_address": null,
+        "calls": [
+          "(url or '').strip",
+          "ContentSegment",
+          "_download_image_from_url",
+          "clean_url.split",
+          "os.path.basename",
+          "self._is_supported_image_link",
+          "self._link_image_cache.get"
+        ]
+      },
+      {
+        "function": "MoodleHTMLParser._is_supported_image_link",
+        "line": 1286,
+        "end_line": 1291,
+        "file_offset": "0xad9a",
+        "native_address": null,
+        "calls": [
+          "lowered.startswith",
+          "os.path.splitext",
+          "os.path.splitext(url.split('?', 1)[0])[1].lower",
+          "url.lower",
+          "url.split"
+        ]
+      },
+      {
+        "function": "MoodleHTMLParser._resolve_image",
+        "line": 1293,
+        "end_line": 1419,
+        "file_offset": "0xaebb",
+        "native_address": null,
+        "calls": [
+          "(alt or '').strip",
+          "ContentSegment",
+          "_dimensions_from_attrs",
+          "_missing_segment",
+          "_segment_from_entry",
+          "base64.b64decode",
+          "entry.get",
+          "header.split",
+          "header.split(';', 1)[0].split",
+          "isinstance",
+          "mime.split",
+          "normalized.split",
+          "os.path.basename",
+          "self._segment_from_link",
+          "self.files.get",
+          "src.lower",
+          "src.lower().startswith",
+          "src.partition",
+          "src.replace",
+          "src.replace('@@PLUGINFILE@@', '').lstrip",
+          "src.split",
+          "src.startswith",
+          "src.strip"
+        ]
+      },
+      {
+        "function": "parse_html_to_segments",
+        "line": 1420,
+        "end_line": 1434,
+        "file_offset": "0xc0b2",
+        "native_address": null,
+        "calls": [
+          "ContentSegment",
+          "MoodleHTMLParser",
+          "bruto.strip",
+          "parser.close",
+          "parser.feed",
+          "segmentos.append"
+        ]
+      },
+      {
+        "function": "_parse_correct_indices",
+        "line": 1437,
+        "end_line": 1452,
+        "file_offset": "0xc307",
+        "native_address": null,
+        "calls": [
+          "ans.attrib.get",
+          "ans.attrib.get('fraction', '0').strip",
+          "corretas.append",
+          "enumerate",
+          "float"
+        ]
+      },
+      {
+        "function": "carregar_questoes",
+        "line": 1454,
+        "end_line": 1511,
+        "file_offset": "0xc549",
+        "native_address": null,
+        "calls": [
+          "Dataset",
+          "DatasetValue",
+          "ET.parse",
+          "Question",
+          "_collect_files",
+          "_parse_correct_indices",
+          "ans.find",
+          "contar_casas_decimais",
+          "d.find",
+          "ds_defs.findall",
+          "float",
+          "item.find",
+          "items_parent.findall",
+          "name_node.find",
+          "parse_html_to_segments",
+          "q.attrib.get",
+          "q.find",
+          "q.find('category').find",
+          "q.find('name').find",
+          "q.findall",
+          "qtext_node.find",
+          "questoes.append",
+          "raw_val.replace",
+          "respostas.append",
+          "root.findall",
+          "tree.getroot",
+          "val_node.text.strip",
+          "valores.append"
+        ]
+      },
+      {
+        "function": "indices_para_letras",
+        "line": 1518,
+        "end_line": 1522,
+        "file_offset": "0xd0f7",
+        "native_address": null,
+        "calls": [
+          "'/'.join",
+          "letters_for",
+          "max"
+        ]
+      },
+      {
+        "function": "exportar_gabarito_pdf",
+        "line": 1524,
+        "end_line": 1558,
+        "file_offset": "0xd1ae",
+        "native_address": null,
+        "calls": [
+          "Paragraph",
+          "SimpleDocTemplate",
+          "Spacer",
+          "Table",
+          "TableStyle",
+          "data.append",
+          "doc.build",
+          "flow.append",
+          "getSampleStyleSheet",
+          "indices_para_letras",
+          "len",
+          "max",
+          "range",
+          "row.append",
+          "str",
+          "table.setStyle"
+        ]
+      },
+      {
+        "function": "ScrollableFrame.__init__",
+        "line": 1573,
+        "end_line": 1582,
+        "file_offset": "0xd84c",
+        "native_address": null,
+        "calls": [
+          "canvas.bbox",
+          "canvas.configure",
+          "canvas.create_window",
+          "canvas.pack",
+          "self.inner.bind",
+          "super",
+          "super().__init__",
+          "tk.Canvas",
+          "tk.Frame",
+          "tk.Scrollbar",
+          "vsb.pack"
+        ]
+      },
+      {
+        "function": "App.__init__",
+        "line": 1585,
+        "end_line": 1720,
+        "file_offset": "0xdaee",
+        "native_address": null,
+        "calls": [
+          "ScrollableFrame",
+          "_load_default_logo_bytes",
+          "actions.pack",
+          "alunos_actions.pack",
+          "alunos_list.pack",
+          "card.pack",
+          "cat_actions.pack",
+          "create_card",
+          "create_entry",
+          "create_entry(frm_header, textvariable=self.header_vars['curso']).grid",
+          "create_entry(frm_header, textvariable=self.header_vars['data'], width=14).grid",
+          "create_entry(frm_header, textvariable=self.header_vars['disciplina']).grid",
+          "create_entry(frm_header, textvariable=self.header_vars['etapa'], width=12).grid",
+          "create_entry(frm_header, textvariable=self.header_vars['instituicao']).grid",
+          "create_entry(frm_header, textvariable=self.header_vars['nota'], width=14).grid",
+          "create_entry(frm_header, textvariable=self.header_vars['peso'], width=12).grid",
+          "create_entry(frm_header, textvariable=self.header_vars['pontos'], width=12).grid",
+          "create_entry(frm_header, textvariable=self.header_vars['professor']).grid",
+          "create_label",
+          "create_label(frm_header, text='Curso:', width=14, anchor='w').grid",
+          "create_label(frm_header, text='Data:', width=10, anchor='w').grid",
+          "create_label(frm_header, text='Disciplina:', width=14, anchor='w').grid",
+          "create_label(frm_header, text='Etapa:', width=10, anchor='w').grid",
+          "create_label(frm_header, text='Instituição:', width=14, anchor='w').grid",
+          "create_label(frm_header, text='Nota:', width=10, anchor='w').grid",
+          "create_label(frm_header, text='Peso:', width=10, anchor='w').grid",
+          "create_label(frm_header, text='Pontos:', width=10, anchor='w').grid",
+          "create_label(frm_header, text='Professor:', width=14, anchor='w').grid",
+          "create_label(frm_header, textvariable=self.logo_name_var, anchor='w').grid",
+          "create_label(hdr, text='# Disponível', width=12, anchor='center', font=('Segoe UI', 10, 'bold')).grid",
+          "create_label(hdr, text='Categoria', width=45, anchor='w', font=('Segoe UI', 10, 'bold')).grid",
+          "create_label(hdr, text='Qtd. desejada', width=12, anchor='center', font=('Segoe UI', 10, 'bold')).grid",
+          "defaultdict",
+          "entry.configure",
+          "frm_header.columnconfigure",
+          "hdr.pack",
+          "header_strip.pack",
+          "options.update",
+          "sb_alunos.pack",
+          "self.alunos_listbox.configure",
+          "self.alunos_listbox.pack",
+          "self.root.configure",
+          "self.root.geometry",
+          "self.root.minsize",
+          "self.root.option_add",
+          "self.root.title",
+          "self.scroll_tbl.pack",
+          "set",
+          "style.configure",
+          "style.map",
+          "style.theme_use",
+          "tk.Entry",
+          "tk.Frame",
+          "tk.Label",
+          "tk.Label(header_strip, text='Gerador de Provas - Moodle', font=('Segoe UI', 18, 'bold'), fg='white', bg=ACCENT_COLOR).pack",
+          "tk.Label(wrapper, text=title, font=('Segoe UI', 12, 'bold'), fg=TEXT_COLOR, bg=APP_BG).pack",
+          "tk.Listbox",
+          "tk.Scrollbar",
+          "tk.StringVar",
+          "ttk.Button",
+          "ttk.Button(actions, text='Gerar provas e gabarito', command=self.gerar_provas, style='Accent.TButton').pack",
+          "ttk.Button(alunos_actions, text='Adicionar alunos...', command=self.add_alunos_dialog, style='Accent.TButton').pack",
+          "ttk.Button(alunos_actions, text='Remover selecionado', command=self.remover_aluno_selecionado, style='Secondary.TButton').pack",
+          "ttk.Button(cat_actions, text='Adicionar categoria...', command=self._adicionar_categoria_dialog, style='Secondary.TButton').pack",
+          "ttk.Button(frm_header, text='Remover logo', command=self._remover_logo, style='Secondary.TButton').grid",
+          "ttk.Button(frm_header, text='Selecionar logo...', command=self._selecionar_logo, style='Secondary.TButton').grid",
+          "ttk.Button(frm_xml, text='Adicionar XML(s)...', command=self.load_xmls, style='Accent.TButton').pack",
+          "ttk.Style",
+          "wrapper.pack"
+        ]
+      },
+      {
+        "function": "App._selecionar_logo",
+        "line": 1722,
+        "end_line": 1743,
+        "file_offset": "0xfe05",
+        "native_address": null,
+        "calls": [
+          "fh.read",
+          "filedialog.askopenfilename",
+          "messagebox.showerror",
+          "messagebox.showwarning",
+          "open",
+          "os.path.basename",
+          "self.logo_name_var.set"
+        ]
+      },
+      {
+        "function": "App._remover_logo",
+        "line": 1745,
+        "end_line": 1751,
+        "file_offset": "0x10131",
+        "native_address": null,
+        "calls": [
+          "_load_default_logo_bytes",
+          "self.logo_name_var.set"
+        ]
+      },
+      {
+        "function": "App._coletar_cabecalho",
+        "line": 1753,
+        "end_line": 1760,
+        "file_offset": "0x10240",
+        "native_address": null,
+        "calls": [
+          "bytes",
+          "info.items",
+          "os.path.basename",
+          "self.header_vars.items",
+          "var.get",
+          "var.get().strip"
+        ]
+      },
+      {
+        "function": "App.add_alunos_dialog",
+        "line": 1765,
+        "end_line": 1786,
+        "file_offset": "0x10408",
+        "native_address": null,
+        "calls": [
+          "dlg.destroy",
+          "dlg.geometry",
+          "dlg.grab_set",
+          "dlg.title",
+          "dlg.wait_window",
+          "len",
+          "ln.strip",
+          "messagebox.showinfo",
+          "messagebox.showwarning",
+          "self.alunos.extend",
+          "self.alunos_list_var.set",
+          "tk.Label",
+          "tk.Label(dlg, text='Informe um nome por linha (ou cole uma lista):').pack",
+          "tk.Text",
+          "tk.Toplevel",
+          "ttk.Button",
+          "ttk.Button(dlg, text='Adicionar', command=confirmar, style='Accent.TButton').pack",
+          "txt.get",
+          "txt.get('1.0', 'end').splitlines",
+          "txt.pack"
+        ]
+      },
+      {
+        "function": "App.remover_aluno_selecionado",
+        "line": 1788,
+        "end_line": 1797,
+        "file_offset": "0x107d4",
+        "native_address": null,
+        "calls": [
+          "messagebox.askyesno",
+          "messagebox.showwarning",
+          "self.alunos_list_var.set",
+          "self.alunos_listbox.curselection"
+        ]
+      },
+      {
+        "function": "App.load_xmls",
+        "line": 1799,
+        "end_line": 1820,
+        "file_offset": "0x10985",
+        "native_address": null,
+        "calls": [
+          "carregar_questoes",
+          "filedialog.askopenfilenames",
+          "len",
+          "messagebox.showerror",
+          "messagebox.showinfo",
+          "messagebox.showwarning",
+          "os.path.basename",
+          "self._prompt_categoria_override",
+          "self._reconstruir_tabela_categorias",
+          "self.questoes.extend"
+        ]
+      },
+      {
+        "function": "App._prompt_categoria_override",
+        "line": 1822,
+        "end_line": 1840,
+        "file_offset": "0x10d0a",
+        "native_address": null,
+        "calls": [
+          "dlg.destroy",
+          "dlg.geometry",
+          "dlg.grab_set",
+          "dlg.title",
+          "dlg.wait_window",
+          "ent.get",
+          "ent.get().strip",
+          "ent.pack",
+          "tk.Button",
+          "tk.Button(dlg, text='Continuar', command=ok).pack",
+          "tk.Entry",
+          "tk.Label",
+          "tk.Label(dlg, text='(Opcional) Definir uma categoria única para todas as questões deste arquivo:').pack",
+          "tk.Label(dlg, text=f'Arquivo:\\n{path}', wraplength=580, justify='left').pack",
+          "tk.Toplevel"
+        ]
+      },
+      {
+        "function": "App._reconstruir_tabela_categorias",
+        "line": 1842,
+        "end_line": 1910,
+        "file_offset": "0x10ffb",
+        "native_address": null,
+        "calls": [
+          "btn_delete.grid",
+          "btn_down.configure",
+          "btn_down.grid",
+          "btn_up.configure",
+          "btn_up.grid",
+          "child.destroy",
+          "counts.get",
+          "counts.items",
+          "defaultdict",
+          "ent.configure",
+          "ent.grid",
+          "ent.insert",
+          "entry.get",
+          "enumerate",
+          "len",
+          "self._excluir_categoria",
+          "self._mover_categoria",
+          "self.categorias_counts.clear",
+          "self.categorias_counts.update",
+          "self.categorias_plan.append",
+          "self.categorias_plan.extend",
+          "self.plan_entries.clear",
+          "self.plan_entries.items",
+          "self.scroll_tbl.inner.winfo_children",
+          "sorted",
+          "str",
+          "tk.Entry",
+          "tk.Label",
+          "tk.Label(self.scroll_tbl.inner, text=cat, width=45, anchor='w').grid",
+          "tk.Label(self.scroll_tbl.inner, text=str(disponivel), width=12, anchor='center').grid",
+          "ttk.Button",
+          "valores_previos.get"
+        ]
+      },
+      {
+        "function": "App._mover_categoria",
+        "line": 1912,
+        "end_line": 1923,
+        "file_offset": "0x11bb1",
+        "native_address": null,
+        "calls": [
+          "len",
+          "self._reconstruir_tabela_categorias",
+          "self.categorias_plan.index"
+        ]
+      },
+      {
+        "function": "App._excluir_categoria",
+        "line": 1925,
+        "end_line": 1936,
+        "file_offset": "0x11dec",
+        "native_address": null,
+        "calls": [
+          "messagebox.askyesno",
+          "self._reconstruir_tabela_categorias",
+          "self.categorias_excluidas.add",
+          "self.categorias_plan.remove"
+        ]
+      },
+      {
+        "function": "App._adicionar_categoria_dialog",
+        "line": 1938,
+        "end_line": 2022,
+        "file_offset": "0x11fca",
+        "native_address": null,
+        "calls": [
+          "buttons.pack",
+          "counts.items",
+          "defaultdict",
+          "dlg.configure",
+          "dlg.destroy",
+          "dlg.grab_set",
+          "dlg.protocol",
+          "dlg.resizable",
+          "dlg.title",
+          "dlg.transient",
+          "dlg.wait_window",
+          "len",
+          "listbox.curselection",
+          "listbox.pack",
+          "listbox.selection_set",
+          "messagebox.showinfo",
+          "messagebox.showwarning",
+          "min",
+          "self._reconstruir_tabela_categorias",
+          "self.categorias_excluidas.remove",
+          "self.categorias_plan.append",
+          "sorted",
+          "tk.Frame",
+          "tk.Label",
+          "tk.Label(dlg, text='Selecione a categoria que deseja adicionar:', bg=CARD_BG, fg=TEXT_COLOR, wraplength=320, justify='left').pack",
+          "tk.Listbox",
+          "tk.StringVar",
+          "tk.Toplevel",
+          "ttk.Button",
+          "ttk.Button(buttons, text='Adicionar', command=confirmar, style='Accent.TButton', width=12).pack",
+          "ttk.Button(buttons, text='Cancelar', command=cancelar, style='Secondary.TButton', width=12).pack"
+        ]
+      },
+      {
+        "function": "App._selecionar_questoes_por_plano",
+        "line": 2024,
+        "end_line": 2089,
+        "file_offset": "0x12aa0",
+        "native_address": null,
+        "calls": [
+          "entry.delete",
+          "entry.get",
+          "entry.insert",
+          "fallback.append",
+          "int",
+          "len",
+          "messagebox.showwarning",
+          "min",
+          "plano.append",
+          "problematicas.append",
+          "questao.has_missing_images",
+          "random.shuffle",
+          "selecionadas.extend",
+          "self.plan_entries.get",
+          "set",
+          "str",
+          "validas.append",
+          "validas.extend",
+          "vistos.add"
+        ]
+      },
+      {
+        "function": "App._sanitizar_nome",
+        "line": 2091,
+        "end_line": 2095,
+        "file_offset": "0x1340f",
+        "native_address": null,
+        "calls": [
+          "nome.strip",
+          "re.sub"
+        ]
+      },
+      {
+        "function": "App.gerar_provas",
+        "line": 2097,
+        "end_line": 2161,
+        "file_offset": "0x13504",
+        "native_address": null,
+        "calls": [
+          "', '.join",
+          "'\\n- '.join",
+          "Exam",
+          "Path",
+          "Path(__file__).resolve",
+          "datetime.now",
+          "datetime.now().strftime",
+          "defaultdict",
+          "dict",
+          "exames.append",
+          "exportar_gabarito_pdf",
+          "instancias.append",
+          "linhas.append",
+          "messagebox.showerror",
+          "messagebox.showinfo",
+          "messagebox.showwarning",
+          "output_dir.mkdir",
+          "problemas_por_categoria[cat].add",
+          "problemas_por_categoria[questao.categoria].add",
+          "prova.export_pdf",
+          "questao.has_missing_images",
+          "questao.instantiate",
+          "self._coletar_cabecalho",
+          "self._exportar_pdf_unico",
+          "self._sanitizar_nome",
+          "self._selecionar_questoes_por_plano",
+          "set",
+          "sorted",
+          "str",
+          "usados_sem_imagem.add"
+        ]
+      },
+      {
+        "function": "App._exportar_pdf_unico",
+        "line": 2163,
+        "end_line": 2189,
+        "file_offset": "0x14100",
+        "native_address": null,
+        "calls": [
+          "SimpleDocTemplate",
+          "StudentNameSetter",
+          "StudentPageBreak",
+          "doc.build",
+          "enumerate",
+          "exam._story",
+          "flow.append",
+          "flow.extend",
+          "str"
+        ]
+      }
+    ],
+    "reference_method": "isolated numeric/text AST definitions; original module not imported",
+    "reference_cases": [
+      {
+        "text": "Valor {= {a}^2/2} N",
+        "variables": {
+          "a": 4.0
+        },
+        "expected": "Valor 8 N"
+      },
+      {
+        "text": "  \\(R = {r}\\,\\Omega\\), \\omega e \\ohm  ",
+        "variables": {
+          "r": 1234.5
+        },
+        "expected": "R = 1.234,50\\,Ω, ω e Ω"
+      },
+      {
+        "text": "Taxa 10,00; 1.000,000; 0,001; -2,00",
+        "variables": {},
+        "expected": "Taxa 10; 1.000; 0,001; -2"
+      },
+      {
+        "text": "{={x}^2} / {=({x})^2} / {=x^2}",
+        "variables": {
+          "x": -2.0
+        },
+        "expected": "-4 / 4 / 4"
+      },
+      {
+        "text": "{=ln(1)+log10(100)+sqrt(4)+abs(-3)}",
+        "variables": {},
+        "expected": "7"
+      },
+      {
+        "text": "{=2**3**2} / {=-2^2} / {=2^-2}",
+        "variables": {},
+        "expected": "512 / -4 / 0,25"
+      },
+      {
+        "text": "{=1,005} / {=-1,005} / {=0,0049}",
+        "variables": {},
+        "expected": "1,01 / -1,01 / 0"
+      },
+      {
+        "text": "{a} / {b} / {c}",
+        "variables": {
+          "a": 1.005,
+          "b": -1.005,
+          "c": 10.0
+        },
+        "expected": "1,01 / -1,01 / 10"
+      },
+      {
+        "text": "{=sin(pi/2)+cos(0)+tan(0)+exp(0)+log(e)}",
+        "variables": {},
+        "expected": "4"
+      },
+      {
+        "text": "{=2,675} / {=-2,675} / {=9,995} / {=-0,005}",
+        "variables": {},
+        "expected": "2,68 / -2,68 / 10 / -0,01"
+      },
+      {
+        "text": "{=1e3+2e-2} / {=2^-3^2}",
+        "variables": {},
+        "expected": "1.000,02 / 0"
+      }
+    ],
+    "answer_score_cases": [
+      {
+        "fractions": [
+          " 50 ",
+          "0",
+          "-25",
+          " 0.5 ",
+          "invalid"
+        ],
+        "expected": [
+          0,
+          3
+        ]
+      },
+      {
+        "fractions": [
+          "100",
+          "100",
+          "0"
+        ],
+        "expected": [
+          0,
+          1
+        ]
+      },
+      {
+        "fractions": [
+          "",
+          "NaN",
+          "-1"
+        ],
+        "expected": []
+      }
+    ],
+    "answer_letter_cases": [
+      {
+        "indices": [],
+        "expected": "-"
+      },
+      {
+        "indices": [
+          0
+        ],
+        "expected": "a"
+      },
+      {
+        "indices": [
+          0,
+          2
+        ],
+        "expected": "a/c"
+      },
+      {
+        "indices": [
+          1,
+          3,
+          7
+        ],
+        "expected": "b/d/h"
+      }
+    ]
+  }
 }

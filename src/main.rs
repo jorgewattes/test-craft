@@ -463,7 +463,7 @@ impl App {
                         .corner_radius(9)
                         .inner_margin(8)
                         .show(ui, |ui| icon(ui, 0, C::WHITE, 24.));
-                    ui.label(R::new("caderno").size(25.).strong().color(C::WHITE));
+                    ui.label(R::new("Test Craft").size(25.).strong().color(C::WHITE));
                 });
                 ui.add_space(6.);
                 ui.label(
@@ -717,7 +717,7 @@ impl App {
                     ui.set_width(ui.available_width());
                     ui.horizontal_wrapped(|ui| {
                         ui.label(
-                            R::new(format!("{}.", (b'A' + i as u8) as char))
+                            R::new(format!("{}.", (b'a' + i as u8) as char))
                                 .strong()
                                 .color(if good { TEAL } else { MUTED }),
                         );
@@ -835,7 +835,7 @@ impl App {
                         ui.add_space(9.);let mut remove=None;
                         for (i,a) in self.draft.answers.iter_mut().enumerate(){
                             ui.horizontal(|ui|{
-                                let mut changed=ui.checkbox(&mut a.correct,format!("{}.",(b'A'+i as u8) as char)).on_hover_text("Alternativa correta").changed();
+                                let mut changed=ui.checkbox(&mut a.correct,format!("{}.",(b'a'+i as u8) as char)).on_hover_text("Alternativa correta").changed();
                                 changed|=ui.add_sized([ui.available_width()-80.,32.],egui::TextEdit::singleline(&mut a.text).background_color(C::from_rgb(246,248,250)).font(egui::TextStyle::Monospace)).changed();
                                 if ui.small_button("Img").on_hover_text("Adicionar imagem à alternativa").clicked(){match pick_picture(){Ok(Some(p))=>{a.pictures.push(p);changed=true;},Ok(None)=>{},Err(e)=>self.validation=Some(Err(e))}}
                                 if ui.small_button("×").clicked(){remove=Some(i)}
@@ -843,7 +843,7 @@ impl App {
                             });
                         }
                         for (i,a) in self.draft.answers.iter_mut().enumerate(){
-                            if !a.pictures.is_empty(){ui.horizontal(|ui|{small(ui,format!("Alternativa {}: {} imagem(ns)",(b'A'+i as u8) as char,a.pictures.len()));if ui.small_button("Remover imagens").clicked(){a.pictures.clear();self.dirty=true;self.validation=None;}});}
+                            if !a.pictures.is_empty(){ui.horizontal(|ui|{small(ui,format!("Alternativa {}: {} imagem(ns)",(b'a'+i as u8) as char,a.pictures.len()));if ui.small_button("Remover imagens").clicked(){a.pictures.clear();self.dirty=true;self.validation=None;}});}
                         }
                         if let Some(i)=remove{self.draft.answers.remove(i);self.dirty=true;self.validation=None;}
                         if self.draft.answers.len()<8&&ui.button("+ Adicionar alternativa").clicked(){self.draft.answers.push(Answer{text:String::new(),correct:false,pictures:vec![]});self.dirty=true;self.validation=None;}
@@ -1100,8 +1100,9 @@ impl App {
         ui.add_space(22.);
         egui::ScrollArea::vertical().show(ui, |ui| {
             card().show(ui, |ui| {
-                ui.label(R::new(format!("Caderno {}", updater::VERSION)).size(21.).strong());
+                ui.label(R::new(format!("Test Craft {}", updater::VERSION)).size(21.).strong());
                 ui.label("Banco de questões calculadas e provas individualizadas.");
+                small(ui, "Feito com o Art Craft.");
                 small(ui, "Software livre · licença MIT · Windows 10/11, 64 bits");
                 rule(ui);
                 ui.label(R::new("Atualizações do programa").size(18.).strong());
@@ -1128,13 +1129,13 @@ impl App {
                     });
                 }
                 rule(ui);
-                small(ui, "Ao atualizar: salve seu trabalho, baixe o ZIP da release, feche o Caderno e substitua apenas o executável. Mantenha sua pasta data ao lado dele.");
+                small(ui, "Ao atualizar: salve seu trabalho, baixe o ZIP da release, feche o Test Craft e substitua apenas o executável. Mantenha sua pasta data ao lado dele.");
                 small(ui, "A consulta usa somente o nome do repositório e a versão do programa. Questões, alunos e provas ficam locais. Sem internet, continue trabalhando e tente a consulta depois.");
             });
             ui.add_space(18.);
             card().show(ui, |ui| {
                 ui.label(R::new("Referências de produto").size(18.).strong());
-                ui.label("Banco de questões, versões de prova, cabeçalhos e gabaritos orientam o fluxo simples do Caderno.");
+                ui.label("Banco de questões, versões de prova, cabeçalhos e gabaritos orientam o fluxo simples do Test Craft.");
                 ui.horizontal(|ui| {
                     ui.hyperlink_to("Gradepen", "https://gradepen.com/p/");
                     ui.hyperlink_to("Minha Prova", "https://www.minhaprova.com.br");
@@ -1151,7 +1152,7 @@ impl App {
                     .open(&mut open).collapsible(false).resizable(false)
                     .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO).default_width(420.)
                     .show(ctx, |ui| {
-                        ui.label(R::new(format!("Caderno {} está disponível", release.version)).size(20.).strong().color(TEAL));
+                        ui.label(R::new(format!("Test Craft {} está disponível", release.version)).size(20.).strong().color(TEAL));
                         ui.label(format!("Versão instalada: {}", updater::VERSION));
                         ui.label("Baixe a nova versão na página oficial de releases. Salve seu trabalho e mantenha a pasta data ao substituir o executável.");
                         ui.horizontal(|ui| {
@@ -1390,12 +1391,12 @@ fn main() -> eframe::Result<()> {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1380., 900.])
             .with_min_inner_size([1120., 740.])
-            .with_title("Caderno · Provas individualizadas"),
+            .with_title("Test Craft · Provas individualizadas"),
         renderer: eframe::Renderer::Glow,
         ..Default::default()
     };
     eframe::run_native(
-        "Caderno",
+        "Test Craft",
         options,
         Box::new(move |cc| {
             let mut app = App::new(cc, screenshot, page);

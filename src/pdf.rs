@@ -4,9 +4,11 @@ use std::{
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
-pub const WIDTH: f64 = 595.2756;
-pub const HEIGHT: f64 = 841.8898;
-pub const MARGIN: f64 = 56.6929;
+// MoodTest.py Exam.export_pdf, source offset 0x95d0: A4, margins 2 * cm.
+// Keep the original unit conversions instead of rounding the dimensions early.
+pub const WIDTH: f64 = 210. / 25.4 * 72.;
+pub const HEIGHT: f64 = 297. / 25.4 * 72.;
+pub const MARGIN: f64 = 2. / 2.54 * 72.;
 
 fn win(c: char) -> u8 {
     match c {
@@ -355,13 +357,20 @@ impl Pdf {
     }
 }
 pub fn letters(q: &Instance) -> String {
-    q.answers
+    let letters = q
+        .answers
         .iter()
         .enumerate()
         .filter(|(_, a)| a.correct)
-        .map(|(i, _)| ((b'A' + i as u8) as char).to_string())
+        .map(|(i, _)| ((b'a' + i as u8) as char).to_string())
         .collect::<Vec<_>>()
-        .join("/")
+        .join("/");
+    // MoodTest.py indices_para_letras, source offset 0xd0f7.
+    if letters.is_empty() {
+        "-".into()
+    } else {
+        letters
+    }
 }
 fn exam(batch: &Batch, s: &StudentExam) -> Pdf {
     let mut p = Pdf::new(&batch.title, &s.name);
@@ -405,7 +414,7 @@ fn exam(batch: &Batch, s: &StudentExam) -> Pdf {
         }
         for (j, a) in q.answers.iter().enumerate() {
             p.line(
-                &format!("   {}) {}", (b'A' + j as u8) as char, a.text),
+                &format!("   {}) {}", (b'a' + j as u8) as char, a.text),
                 11.,
                 false,
             );
@@ -555,6 +564,31 @@ pub fn export(batch: &Batch, base: &Path) -> Result<PathBuf, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn answer_letters_match_original() {
+        let mechanics: serde_json::Value =
+            serde_json::from_str(include_str!("../mechanics.json")).unwrap();
+        for case in mechanics["original"]["answer_letter_cases"]
+            .as_array()
+            .unwrap()
+        {
+            let indices: Vec<usize> = serde_json::from_value(case["indices"].clone()).unwrap();
+            let q = Instance {
+                title: String::new(),
+                text: String::new(),
+                values: Default::default(),
+                pictures: vec![],
+                answers: (0..8)
+                    .map(|i| Answer {
+                        text: i.to_string(),
+                        correct: indices.contains(&i),
+                        pictures: vec![],
+                    })
+                    .collect(),
+            };
+            assert_eq!(letters(&q), case["expected"].as_str().unwrap());
+        }
+    }
     #[test]
     fn pictures_symbols_and_combined_pdf() {
         let mut bytes = std::io::Cursor::new(Vec::new());

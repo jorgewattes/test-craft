@@ -551,19 +551,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc652a48c352aef3ea3aed32080501cf3ef6ed5da78602a020c991775b0aff04"
 
 [[package]]
-name = "caderno"
-version = "0.2.0"
-dependencies = [
- "eframe",
- "flate2",
- "image",
- "rfd",
- "serde",
- "serde_json",
- "xml-rs",
-]
-
-[[package]]
 name = "calloop"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2912,6 +2899,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "06794f8f6c5c898b3275aebefa6b8a1cb24cd2c6c79397ab15774837a0bc5755"
 dependencies = [
  "winapi-util",
+]
+
+[[package]]
+name = "test-craft"
+version = "0.2.0"
+dependencies = [
+ "eframe",
+ "flate2",
+ "image",
+ "rfd",
+ "serde",
+ "serde_json",
+ "xml-rs",
 ]
 
 [[package]]

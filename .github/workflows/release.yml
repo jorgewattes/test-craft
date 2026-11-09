@@ -26,5 +26,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$env:GITHUB_REF_NAME" dist/*.zip dist/*.sha256 --verify-tag --title "Caderno $env:GITHUB_REF_NAME" --notes-file CHANGELOG.md
+          gh release create "$env:GITHUB_REF_NAME" dist/*.zip dist/*.sha256 --verify-tag --title "Test Craft $env:GITHUB_REF_NAME" --notes-file CHANGELOG.md
           if ($LASTEXITCODE -ne 0) { throw 'Falha ao publicar release' }

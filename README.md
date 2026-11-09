@@ -1,17 +1,19 @@
-# Caderno
+# Test Craft
 
 Aplicativo de código aberto para criar questões calculadas, organizar um banco local e gerar provas e gabaritos individualizados em PDF. Interface em português, sem conta e sem mensalidade. Versão atual: **0.2.0**.
 
+O nome **Test Craft** foi escolhido porque o aplicativo foi feito com o **Art Craft**. O projeto transforma o fluxo original do MoodTest em uma ferramenta local para elaborar questões e gerar provas.
+
 ## Usar no Windows
 
-1. Baixe **caderno-0.2.0-windows-x64.zip** na página de Releases do repositório público (quando publicado).
-2. Extraia o ZIP para uma pasta em que você possa gravar, como Documentos/Caderno. Evite executar dentro do ZIP ou instalar em Arquivos de Programas.
-3. Abra **caderno.exe**. O aplicativo cria a pasta **data** ao lado do executável no primeiro uso.
+1. Baixe **test-craft-0.2.0-windows-x64.zip** na página de Releases do repositório público (quando publicado).
+2. Extraia o ZIP para uma pasta em que você possa gravar, como Documentos/Test Craft. Evite executar dentro do ZIP ou instalar em Arquivos de Programas.
+3. Abra **test-craft.exe**. O aplicativo cria a pasta **data** ao lado do executável no primeiro uso.
 4. Em **Banco de questões**, explore os exemplos ou importe seu banco. Em **Elaborar questão**, cadastre e valide suas questões. Em **Criar prova**, escolha quantidades por categoria, informe os alunos e confira a prévia antes de exportar.
 
 Requisitos: Windows 10/11 de 64 bits, suporte gráfico OpenGL e permissão para gravar na pasta do programa. A consulta de atualizações utiliza o curl.exe fornecido pelo Windows. O executável é portátil e não tem assinatura digital. Não é necessário instalar Rust para usá-lo.
 
-O pacote compilado nesta entrega está em **dist/caderno-0.2.0-windows-x64.zip** e o executável em **dist/caderno-0.2.0-windows-x64/caderno.exe**. O arquivo ZIP.sha256 contém a soma para conferir o download com Get-FileHash -Algorithm SHA256.
+O pacote compilado nesta entrega está em **dist/test-craft-0.2.0-windows-x64.zip** e o executável em **dist/test-craft-0.2.0-windows-x64/test-craft.exe**. O arquivo ZIP.sha256 contém a soma para conferir o download com Get-FileHash -Algorithm SHA256.
 
 ## Funcionalidades
 
@@ -36,9 +38,9 @@ Em **Sobre e atualizações**, informe **conta/repositorio**, o link do reposit�
 
 Com a opção automática ativa, o programa consulta a release estável mais recente ao abrir e a cada seis horas enquanto estiver em uso. Também é possível clicar **Verificar agora**. A consulta ocorre em segundo plano, tem limite de tempo e não envia questões, nomes de alunos ou provas. Falta de internet, limite da API, repositório inexistente e ausência de release são informados na tela; o trabalho local continua disponível.
 
-Uma versão numericamente maior com o pacote **caderno-VERSAO-windows-x64.zip** publicado abre a oferta de atualização. **Baixar atualização** abre a página oficial da release no navegador; **Mais tarde** permite continuar. Prereleases e rascunhos são ignorados. A integração segue a [API oficial de releases do GitHub](https://docs.github.com/en/rest/releases/releases#get-the-latest-release).
+Uma versão numericamente maior com o pacote **test-craft-VERSAO-windows-x64.zip** publicado abre a oferta de atualização. **Baixar atualização** abre a página oficial da release no navegador; **Mais tarde** permite continuar. Prereleases e rascunhos são ignorados. A integração segue a [API oficial de releases do GitHub](https://docs.github.com/en/rest/releases/releases#get-the-latest-release).
 
-Para instalar a atualização: salve seu trabalho, baixe e extraia o novo ZIP, feche o Caderno e substitua o executável antigo pelo novo, **mantendo a pasta data existente**. Não há substituição silenciosa de arquivos nem instalação automática. A configuração pública em release-config.json é incorporada durante a compilação; alterar esse arquivo depois de compilar não muda o executável. A preferência salva na interface prevalece sobre a configuração incorporada.
+Para instalar a atualização: salve seu trabalho, baixe e extraia o novo ZIP, feche o Test Craft e substitua o executável antigo pelo novo, **mantendo a pasta data existente**. Não há substituição silenciosa de arquivos nem instalação automática. A configuração pública em release-config.json é incorporada durante a compilação; alterar esse arquivo depois de compilar não muda o executável. A preferência salva na interface prevalece sobre a configuração incorporada.
 
 ## Compilar e verificar
 
@@ -53,7 +55,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-release.ps1
 O script testa, compila com **cargo rustc --release --locked -- -C target-feature=+crt-static**, incorpora estaticamente o runtime C, monta o ZIP em dist e calcula seu SHA-256. Para já incorporar o repositório público:
 
 ~~~powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-release.ps1 -Repository sua-conta/caderno
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-release.ps1 -Repository sua-conta/test-craft
 ~~~
 
 Com as dependências já disponíveis no computador, também é possível usar cargo build --release --locked --offline. Cargo.lock está incluído para manter as versões de dependências.
@@ -72,14 +74,31 @@ A opção self-check gera PDFs de exemplo em checks. A captura encerra o aplicat
 
 **Estado desta entrega:** fontes e distribuição Windows preparados localmente; a publicação remota depende de uma conta autenticada no GitHub. Não há um endereço público fictício configurado. O release-config.json permanece sem repositório até a publicação ou configuração pela interface.
 
-1. Instale Git e GitHub CLI; autentique sua conta com **gh auth login**.
-2. Execute o comando abaixo nesta pasta, escolhendo um repositório novo ou vazio:
+1. Instale [Git](https://git-scm.com/downloads/win) e [GitHub CLI](https://cli.github.com/), se necessário. No PowerShell do seu usuário Windows, execute o comando abaixo e conclua a autorização no navegador com a conta em que deseja publicar:
 
 ~~~powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/publish.ps1 -Repository sua-conta/caderno
+gh auth login --hostname github.com --git-protocol https --web --scopes workflow
 ~~~
 
-O script cria um repositório **público**, configura origin, incorpora seu endereço no aplicativo, testa e compila, registra os fontes e envia a tag correspondente à versão. Um repositório privado existente é recusado, preservando sua visibilidade. O workflow **.github/workflows/release.yml** executa os testes no Windows, recompila o ZIP e publica ZIP e SHA-256 em GitHub Releases. O código-fonte também fica disponível no repositório e nos arquivos de fonte da release. Acompanhe a execução em **Actions** e compartilhe o endereço **https://github.com/SUA-CONTA/caderno/releases** após a conclusão. GitHub Actions deve estar habilitado no repositório.
+Se já estiver autenticado nessa sessão, autorize o envio do workflow com **gh auth refresh --hostname github.com --scopes workflow**. Essa permissão permite enviar a automação que compila e publica o pacote Windows; a autorização de repositórios permite criar o repositório e enviar os fontes. Consulte as instruções oficiais de [login](https://cli.github.com/manual/gh_auth_login) e [permissões adicionais](https://cli.github.com/manual/gh_auth_refresh).
+
+2. Abra **scripts/publicar.cmd** com dois cliques para publicar em **sua-conta/test-craft**, usando seu login do Windows. Para escolher outro repositório novo ou vazio, execute o comando abaixo nesta pasta:
+
+~~~powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/publish.ps1 -Repository sua-conta/test-craft
+~~~
+
+O script cria um repositório **público**, configura origin, incorpora seu endereço no aplicativo, testa e compila, registra os fontes e envia a tag correspondente à versão. Um repositório privado existente é recusado, preservando sua visibilidade. O workflow **.github/workflows/release.yml** executa os testes no Windows, recompila o ZIP e publica ZIP e SHA-256 em GitHub Releases. O código-fonte também fica disponível no repositório e nos arquivos de fonte da release. Acompanhe a execução em **Actions** e compartilhe o endereço **https://github.com/SUA-CONTA/test-craft/releases** após a conclusão. GitHub Actions deve estar habilitado no repositório.
+
+**Já estou autenticado no CMD, PowerShell e GitHub Desktop. Isso basta?** Basta quando o comando de publicação consegue acessar a conta nessa mesma sessão. O login no seu terminal ou no Desktop não comprova que o Craft Anything também tem acesso: ele pode executar como **CodexSandboxOffline**, um usuário Windows diferente. Uma recusa nessa sessão não significa que você precise refazer o login no seu usuário.
+
+Para conferir sem publicar nada, abra **scripts/verificar-login.cmd** com dois cliques no seu Windows. A janela mostra o usuário Windows e confirma a conta GitHub quando consegue acessá-la. Se confirmar, abra **scripts/publicar.cmd** pelo mesmo usuário. Se a verificação também falhar no seu usuário, execute **gh auth login** nesse terminal e tente novamente. Não é necessário copiar tokens ou credenciais para o Craft Anything.
+
+**Verificação desta entrega (09/11/2026):** o comando de verificação rodou como **wattes/CodexSandboxOffline** e não conseguiu acessar a API do GitHub; nenhum repositório foi criado e nada foi enviado. Para publicar agora, siga os passos acima no seu usuário Windows. A autorização no navegador precisa valer para a sessão que executa a publicação; um login feito no seu usuário não libera automaticamente o acesso desta sessão isolada.
+
+Se você já usava a versão chamada Caderno, extraia o novo pacote em outra pasta e, com o aplicativo fechado, copie a pasta **data** antiga para junto de **test-craft.exe**. O formato dos dados continua compatível.
+
+A mesma verificação está disponível pelo terminal com **powershell -NoProfile -ExecutionPolicy Bypass -File scripts/publish.ps1 -CheckAuth**. A publicação verifica o acesso antes de alterar arquivos. As credenciais são usadas somente nos comandos de envio, sem alterar as configurações globais do Git.
 
 Para uma próxima release, altere a versão em Cargo.toml e atualize CHANGELOG.md; execute novamente publish.ps1. Use uma nova tag para cada versão; o script não sobrescreve tags existentes. A execução manual do workflow gera artefatos para teste; apenas tags publicam uma release.
 
@@ -98,7 +117,7 @@ A pasta dist fica fora do histórico Git; os binários são distribuídos como a
 
 ## Referências e limites
 
-[Gradepen](https://gradepen.com/p/) e [Minha Prova](https://www.minhaprova.com.br) servem como referências de produto para banco de questões, variações de prova, cabeçalhos e gabaritos. O Caderno é uma implementação independente, sem vínculo com essas plataformas. Esta versão prioriza o fluxo local simples; não oferece correção óptica, TRI, inteligência artificial, aplicação online nem colaboração em nuvem.
+[Gradepen](https://gradepen.com/p/) e [Minha Prova](https://www.minhaprova.com.br) servem como referências de produto para banco de questões, variações de prova, cabeçalhos e gabaritos. O Test Craft é uma implementação independente, sem vínculo com essas plataformas. Esta versão prioriza o fluxo local simples; não oferece correção óptica, TRI, inteligência artificial, aplicação online nem colaboração em nuvem.
 
 A interface é um redesenho solicitado do fluxo original em Python/Tkinter. Resultados numéricos usam português e duas casas decimais. O sorteio pode repetir valores entre alunos e não promete exclusividade global. O identificador, o banco e a lista permitem reproduzir versões nesta mesma versão do aplicativo; o registro JSON preserva os resultados exatos mesmo após editar o banco.
 
