@@ -1,5 +1,8 @@
-# Test Craft 0.3.0
+# Test Craft 0.3.1
 
+- Prévias maiores no banco e no editor, com janela ampliada; menu recolhível com ícones e preferência salva.
+- Categorias e subcategorias em dropdown hierárquico, criação por popup e persistência também de categorias vazias no JSON. Filtro de categoria inclui seus descendentes.
+- Provas restauram o gabarito em branco do original: tabelas de até 15 questões, rótulos Q01 em diante e linha para preencher, preservando cada bloco em uma página.
 - Cálculos propagam erros de domínio, estouro de funções matemáticas e potência de zero com expoente negativo, conforme o fonte original, mesmo quando uma operação posterior poderia ocultar o erro.
 - Atalho de conexão ao GitHub corrigido para pastas com proprietário diferente, sem exceção global de confiança no Git.
 - Publicação no GitHub inclui MSI, ZIP e seus checksums SHA-256, com notas apenas da versão atual.

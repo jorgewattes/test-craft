@@ -1,5 +1,73 @@
 # Regras verificadas no original
 
+## Melhorias de interface solicitadas (09/11/2026)
+
+Mudanças novas de usabilidade: o banco dedica 48% da largura útil à prévia e
+o editor 44%, com opção de janela ampliada e rolagem própria. O menu esquerdo
+alterna entre 222 e 72 pontos, mostra dicas nos ícones e guarda a preferência
+em `menu-recolhido.json` ao fechar.
+
+Categorias usam dropdown com hierarquia e popup para criação. O campo JSON
+opcional `category_labels` preserva categorias vazias, inclusive na exportação
+e importação; bancos antigos continuam compatíveis. Caminhos separados por `/`
+representam subcategorias; pais implícitos são incluídos e o filtro do banco
+inclui descendentes sem confundir nomes com prefixos semelhantes. O plano de
+prova mantém contagens por categoria exata para não duplicar questões.
+
+## Conferência atual: tabelas de respostas (09/11/2026)
+
+O principal original `C:/dev/MoodTest/MoodTest.py` foi reaberto com
+`core_target_open`. É fonte Python de 83.212 bytes, SHA-256
+`c2b9ff9719e5ca4b7c837a22da5eae6a3bd2811d9eb17ef6895a730c038f1541`.
+Nesta execução foram aguardadas sequencialmente 3 buscas `native_strings_find`
+para nomes, configurações e mensagens, 5 buscas de referências por nome e 22
+consultas `native_function_pseudocode`. Todas recusaram o formato com
+`not_supported: Unknown file magic`. O registro está em
+[checks/native-tables-review.json](checks/native-tables-review.json).
+**Não foi obtido pseudocódigo nativo nem endereço de função nativa.** Os locais
+abaixo são offsets dos bytes do fonte; `native_address` continua `null`.
+
+Foi seguida a chamada de `Exam._story` (linha 1107, chamada em `0x947b`) para
+`add_blank_answer_tables` (linha 968, definição em `0x7e27`). O bloco de respostas
+da reconstrução era uma linha de texto; agora usa as regras recuperadas:
+
+| Local no fonte original | Valor, fórmula ou regra | Aplicação na reconstrução |
+|---|---|---|
+| `add_blank_answer_tables`, `0x7e27`; constante `block = 15` em `0x7f2f` | `start = 1`; `end = min(start + 15 - 1, num_q)`; próximo início `end + 1`. | `src/pdf.rs`, `ANSWER_TABLE_BLOCK = 15`; cada bloco tem no máximo 15 colunas. |
+| Mesma função, linhas 976–978 | Cabeçalhos `Q{int(i):02d}` e segunda linha vazia. | Q01 até Q99, depois Q100; campo vazio para cada resposta. |
+| Mesma função, linhas 981–984 | Grade preta de 0,75 ponto, cabeçalho cinza claro, texto centralizado em negrito. | Grade e cabeçalho desenhados no PDF; tabela antes das questões nos arquivos individual e combinado. |
+| Mesma função, linhas 988–990 | Espaçador de 8 pontos após cada bloco e mais 8 ao final. | Espaçamento de 8 pontos, sem separar o cabeçalho de sua linha de respostas numa quebra de página. |
+
+Evidências dos locais: definição
+`ev_86c7eb1d3a69b7330d33e65d872277efea2d4d92677759341d8d648c801819ca`,
+constante `ev_8d8b9d3bc7f2e99d5c2a3d8660f555b41b563d62c68754d227154e20e3c3e7bf`,
+chamada `ev_a23a9128616ce779568c527ec356339e1bdaec363167cf1ab558dddee49ce18b`.
+Foi executada somente essa definição AST isolada com adaptadores de captura de
+tabelas, sem importar o aplicativo. Os seis casos de 0, 1, 15, 16, 31 e 100
+questões estão em `mechanics.json`, `original.blank_answer_table_cases`, e em
+[checks/source-answer-tables.json](checks/source-answer-tables.json).
+
+O teste `blank_answer_tables_match_original` demonstrou a diferença antes da
+correção: Q01 estava ausente. Agora compara todos os rótulos com os resultados
+do original e verifica uma quebra de página forçada entre Q15 e Q16. A largura
+das células e as alturas das linhas pertencem à diagramação própria da
+reconstrução; não reproduzem o cálculo automático de dimensões do ReportLab.
+O teste de PDF combinado confere a soma real das páginas individuais, pois
+incluir a tabela pode aumentar o número de páginas. As demais regras, fórmulas
+e limitações recuperadas estão documentadas nas seções seguintes.
+
+Verificação desta execução: **21 testes passaram** em `cargo test --locked`;
+`cargo build --release --locked` e o executável release com `--self-check`
+concluíram com sucesso. `rebuild_check` passou em compilação, inicialização e
+captura (2070 × 1350) e mecânicas (16 valores, 13 com fonte, 3 decisões novas).
+A extração dos PDFs confirmou os mesmos grupos de cabeçalhos do original e
+linhas de respostas vazias nos seis tamanhos. Todos os PDFs de comparação foram
+renderizados; as primeiras páginas de 1, 31 e 100 questões foram inspecionadas
+visualmente. Resultados em
+[checks/answer-tables-verification.json](checks/answer-tables-verification.json)
+e [checks/tables-build-verification.json](checks/tables-build-verification.json).
+O executável atualizado é `target/release/test-craft.exe`.
+
 ## Conferência atual: propagação de erros de cálculo (09/11/2026)
 
 O programa principal `C:/dev/MoodTest/MoodTest.py` foi novamente aberto com

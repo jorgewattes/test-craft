@@ -4,7 +4,7 @@ Crie questões calculadas, organize seu banco e gere provas e gabaritos individu
 
 ## Instalar
 
-Baixe o [instalador MSI do Test Craft 0.3.0](https://github.com/jorgewattes/test-craft/releases/download/v0.3.0/test-craft-0.3.0-windows-x64.msi), execute o instalador e abra **Test Craft** pelo menu Iniciar. Requer Windows 10/11 de 64 bits e suporte a OpenGL.
+Baixe o [instalador MSI do Test Craft 0.3.1](https://github.com/jorgewattes/test-craft/releases/download/v0.3.1/test-craft-0.3.1-windows-x64.msi), execute o instalador e abra **Test Craft** pelo menu Iniciar. Requer Windows 10/11 de 64 bits e suporte a OpenGL.
 
 Para atualizar, feche o aplicativo e execute o novo MSI. Os dados ficam em **%LOCALAPPDATA%\Test Craft\data** e são preservados na atualização e desinstalação. Copie essa pasta para fazer backup.
 
@@ -36,7 +36,7 @@ Se o login expirar, abra novamente o atalho. Não envie senhas ou tokens pelo ch
 
 No Craft Anything, o perfil **Codex Caderno GitHub** usa o executor do Craft (`build_command_run`) com seu usuário habitual do Windows. Se o terminal isolado informar **CodexSandboxOffline**, o Codex deve repetir a verificação por esse executor antes de solicitar um novo login. Se o executor estiver indisponível, abra o Codex ou o PowerShell com seu usuário habitual do Windows.
 
-O projeto fica em **C:\dev\moodtest2\app**, branch **main**, versão **0.3.0** e tag **v0.3.0**, no repositório **jorgewattes/test-craft**. Confira a conexão antes de enviar; a publicação só está concluída quando o workflow da tag terminar e a Release com MSI e ZIP estiver disponível no GitHub. A validação ICE do MSI é obrigatória no workflow; pacotes locais gerados com `-SkipMsiValidation` não substituem essa validação.
+O projeto fica em **C:\dev\moodtest2\app**, branch **main**, versão **0.3.1** e tag **v0.3.1**, no repositório **jorgewattes/test-craft**. Confira a conexão antes de enviar; a publicação só está concluída quando o workflow da tag terminar e a Release com MSI e ZIP estiver disponível no GitHub. A validação ICE do MSI é obrigatória no workflow; pacotes locais gerados com `-SkipMsiValidation` não substituem essa validação.
 
 Com Rust e Visual Studio Build Tools instalados:
 

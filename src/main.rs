@@ -102,6 +102,58 @@ fn field(ui: &mut egui::Ui, label: &str, value: &mut String) {
     );
     ui.add_space(9.);
 }
+fn category_options(ui: &mut egui::Ui, selected: &mut String, choices: &[String]) {
+    for path in choices {
+        let depth = path.matches('/').count();
+        let leaf = path.rsplit('/').next().unwrap_or(path);
+        let label = format!(
+            "{}{}{}",
+            "    ".repeat(depth),
+            if depth > 0 { "↳ " } else { "" },
+            leaf
+        );
+        ui.selectable_value(selected, path.clone(), label)
+            .on_hover_text(path.replace('/', " / "));
+    }
+}
+fn category_dropdown(
+    ui: &mut egui::Ui,
+    id: &str,
+    selected: &mut String,
+    choices: &[String],
+    all: bool,
+) {
+    egui::ComboBox::from_id_salt(id)
+        .selected_text(if selected.is_empty() {
+            "Selecione uma categoria".into()
+        } else {
+            selected.replace('/', " / ")
+        })
+        .width(ui.available_width())
+        .height(300.)
+        .show_ui(ui, |ui| {
+            if all {
+                ui.selectable_value(selected, "Todas".into(), "Todas as categorias");
+            }
+            category_options(ui, selected, choices);
+        });
+}
+fn display_preview(q: &Question, seed: u64) -> Result<Instance, String> {
+    if q.variables.len() > 12
+        || q.answers.len() > 8
+        || q.variables.iter().any(|v| {
+            v.decimals > 6
+                || !v.min.is_finite()
+                || !v.max.is_finite()
+                || v.min > v.max
+                || v.count() == 0
+                || v.count() >= usize::MAX / 2
+        })
+    {
+        return Err("Ajuste os intervalos para visualizar.".into());
+    }
+    preview(q, seed)
+}
 fn show_pictures(ui: &mut egui::Ui, pictures: &[Picture]) {
     use std::hash::{Hash, Hasher};
     for p in pictures {
@@ -202,6 +254,23 @@ fn icon(ui: &mut egui::Ui, kind: usize, color: C, size: f32) {
             p.line_segment([r.min + Vec2::new(0., 4.), r.min], s);
             p.line_segment([r.min, r.min + Vec2::new(size * 0.45, 0.)], s);
         }
+        4 => {
+            p.rect_stroke(r, 2., s, egui::StrokeKind::Inside);
+            p.line_segment(
+                [
+                    r.center() - Vec2::new(5., 0.),
+                    r.center() + Vec2::new(5., 0.),
+                ],
+                s,
+            );
+            p.line_segment(
+                [
+                    r.center() - Vec2::new(0., 5.),
+                    r.center() + Vec2::new(0., 5.),
+                ],
+                s,
+            );
+        }
         _ => {
             p.circle_stroke(r.center(), size * 0.35, s);
             p.line_segment([r.center(), r.center() + Vec2::new(0., -size * 0.2)], s);
@@ -263,6 +332,13 @@ struct App {
     screenshot: Option<PathBuf>,
     frames: u32,
     screenshot_requested: bool,
+    sidebar_collapsed: bool,
+    category_dialog: bool,
+    category_for_editor: bool,
+    category_name: String,
+    category_parent: String,
+    category_error: Option<String>,
+    expanded_preview: bool,
 }
 impl App {
     fn new(cc: &eframe::CreationContext<'_>, screenshot: Option<PathBuf>, page: usize) -> Self {
@@ -293,13 +369,14 @@ impl App {
         cc.egui_ctx.set_style(style);
         let data = data_root();
         let bankpath = data.join("banco.json");
-        let (bank, error) = if bankpath.exists() {
+        let (mut bank, error) = if bankpath.exists() {
             match read_bank(&bankpath) {
                 Ok(b) => (b, None),
                 Err(e) => (
                     Bank {
                         version: 1,
                         questions: vec![],
+                        category_labels: vec![],
                     },
                     Some(format!(
                         "Não foi possível abrir o banco: {e} O arquivo foi preservado."
@@ -309,6 +386,7 @@ impl App {
         } else {
             (examples(), None)
         };
+        bank.category_labels = categories(&bank);
         let setup = std::fs::read(data.join("preferencias.json"))
             .ok()
             .and_then(|b| serde_json::from_slice(&b).ok())
@@ -351,6 +429,16 @@ impl App {
             screenshot,
             frames: 0,
             screenshot_requested: false,
+            sidebar_collapsed: std::fs::read(data_root().join("menu-recolhido.json"))
+                .ok()
+                .and_then(|b| serde_json::from_slice(&b).ok())
+                .unwrap_or(false),
+            category_dialog: false,
+            category_for_editor: false,
+            category_name: String::new(),
+            category_parent: String::new(),
+            category_error: None,
+            expanded_preview: false,
         };
         app.sync_plan();
         app.refresh_history();
@@ -368,6 +456,7 @@ impl App {
     }
     fn persist(&mut self) -> bool {
         self.batch = None;
+        self.bank.category_labels = categories(&self.bank);
         if let Err(e) = save_bank(&self.data.join("banco.json"), &self.bank) {
             self.notify(format!("Não foi possível salvar: {e}"), true);
             false
@@ -412,6 +501,10 @@ impl App {
         self.draft = examples().questions.remove(0);
         self.draft.id = now();
         self.draft.title.clear();
+        self.draft.category = categories(&self.bank)
+            .into_iter()
+            .next()
+            .unwrap_or_default();
         self.edit_id = None;
         self.validation = None;
         self.dirty = false;
@@ -440,6 +533,7 @@ impl App {
                     let count = b.questions.len();
                     let errors = b.questions.iter().filter(|q| validate(q).is_err()).count();
                     let old = self.bank.clone();
+                    self.bank.category_labels.extend(b.category_labels);
                     let mut next = self.bank.questions.iter().map(|q| q.id).max().unwrap_or(0) + 1;
                     for mut q in b.questions {
                         q.id = next;
@@ -475,56 +569,68 @@ impl App {
         }
     }
     fn sidebar(&mut self, ctx: &egui::Context) {
+        let compact = self.sidebar_collapsed;
         egui::SidePanel::left("navigation")
-            .exact_width(222.)
+            .exact_width(if compact { 72. } else { 222. })
             .resizable(false)
             .frame(
                 egui::Frame::new()
                     .fill(C::from_rgb(23, 53, 49))
-                    .inner_margin(Margin::symmetric(18, 26)),
+                    .inner_margin(Margin::symmetric(if compact { 12 } else { 18 }, 22)),
             )
             .show(ctx, |ui| {
-                ui.horizontal(|ui| {
-                    egui::Frame::new()
-                        .fill(C::from_rgb(75, 153, 131))
-                        .corner_radius(9)
-                        .inner_margin(8)
-                        .show(ui, |ui| icon(ui, 0, C::WHITE, 24.));
-                    ui.label(R::new("Test Craft").size(25.).strong().color(C::WHITE));
-                });
-                ui.add_space(6.);
-                ui.label(
-                    R::new("QUESTÕES QUE SE TRANSFORMAM")
-                        .size(9.)
-                        .color(C::from_rgb(148, 179, 170)),
-                );
-                ui.add_space(38.);
-                ui.label(
-                    R::new("SEU ESPAÇO")
-                        .size(10.)
-                        .color(C::from_rgb(140, 170, 162)),
-                );
-                ui.add_space(10.);
+                let (rect, response) =
+                    ui.allocate_exact_size(Vec2::new(44., 38.), egui::Sense::click());
+                for offset in [-6., 0., 6.] {
+                    ui.painter().line_segment(
+                        [
+                            rect.center() + Vec2::new(-9., offset),
+                            rect.center() + Vec2::new(9., offset),
+                        ],
+                        Stroke::new(1.8f32, C::WHITE),
+                    );
+                }
+                if response
+                    .on_hover_text(if compact {
+                        "Expandir menu"
+                    } else {
+                        "Recolher menu"
+                    })
+                    .clicked()
+                {
+                    self.sidebar_collapsed = !compact;
+                }
+                if !compact {
+                    ui.add_space(12.);
+                    ui.horizontal(|ui| {
+                        icon(ui, 0, C::from_rgb(153, 222, 191), 24.);
+                        ui.label(R::new("Test Craft").size(25.).strong().color(C::WHITE));
+                    });
+                    ui.label(
+                        R::new("QUESTÕES QUE SE TRANSFORMAM")
+                            .size(9.)
+                            .color(C::from_rgb(148, 179, 170)),
+                    );
+                }
+                ui.add_space(26.);
                 for (page, kind, label) in [
                     (0, 0, "Banco de questões"),
                     (1, 1, "Elaborar questão"),
-                    (2, 1, "Criar prova"),
+                    (2, 4, "Criar prova"),
                     (3, 2, "Arquivos locais"),
                     (4, 3, "Sobre e atualizações"),
                 ] {
                     let selected = self.page == page;
-                    let fill = if selected {
-                        C::from_rgb(46, 82, 72)
-                    } else {
-                        C::TRANSPARENT
-                    };
-                    let frame = egui::Frame::new()
-                        .fill(fill)
+                    let r = egui::Frame::new()
+                        .fill(if selected {
+                            C::from_rgb(46, 82, 72)
+                        } else {
+                            C::TRANSPARENT
+                        })
                         .corner_radius(7)
-                        .inner_margin(Margin::symmetric(11, 12));
-                    let r = frame
+                        .inner_margin(Margin::symmetric(11, 12))
                         .show(ui, |ui| {
-                            ui.set_width(164.);
+                            ui.set_width(if compact { 22. } else { 164. });
                             ui.horizontal(|ui| {
                                 icon(
                                     ui,
@@ -534,18 +640,21 @@ impl App {
                                     } else {
                                         C::from_rgb(157, 181, 173)
                                     },
-                                    18.,
+                                    20.,
                                 );
-                                ui.label(R::new(label).size(13.).color(if selected {
-                                    C::WHITE
-                                } else {
-                                    C::from_rgb(184, 203, 196)
-                                }));
+                                if !compact {
+                                    ui.label(R::new(label).size(13.).color(if selected {
+                                        C::WHITE
+                                    } else {
+                                        C::from_rgb(184, 203, 196)
+                                    }));
+                                }
                             });
                         })
                         .response;
                     if ui
                         .interact(r.rect, r.id.with(page), egui::Sense::click())
+                        .on_hover_text(label)
                         .clicked()
                     {
                         if page == 1 && self.page != 1 {
@@ -557,48 +666,40 @@ impl App {
                     ui.add_space(3.);
                 }
                 ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
-                    ui.label(
-                        R::new("Feito para ensinar.")
-                            .size(11.)
-                            .color(C::from_rgb(130, 161, 151)),
-                    );
-                    ui.add_space(13.);
-                    egui::Frame::new()
-                        .fill(C::from_rgb(32, 65, 58))
-                        .corner_radius(9)
-                        .inner_margin(14)
-                        .show(ui, |ui| {
-                            ui.set_width(154.);
-                            ui.horizontal(|ui| {
-                                dot(ui, C::from_rgb(126, 211, 171));
-                                ui.label(
-                                    R::new("Seu banco é local")
-                                        .size(12.)
-                                        .color(C::from_rgb(216, 234, 225)),
-                                );
-                            });
-                            ui.label(
-                                R::new("Crie, salve e exporte.\nMesmo sem internet.")
-                                    .size(11.)
-                                    .color(C::from_rgb(151, 183, 170)),
-                            );
-                        });
+                    if !compact {
+                        ui.label(
+                            R::new("Seu banco é local")
+                                .size(12.)
+                                .color(C::from_rgb(184, 203, 196)),
+                        );
+                        ui.label(
+                            R::new("Crie, salve e exporte.\nMesmo sem internet.")
+                                .size(11.)
+                                .color(C::from_rgb(151, 183, 170)),
+                        );
+                    }
                     if ui
                         .add(
                             egui::Button::new(
-                                R::new("Como funciona   ?")
-                                    .color(C::from_rgb(184, 203, 196))
-                                    .size(12.),
+                                R::new(if compact { "?" } else { "Como funciona   ?" })
+                                    .color(C::from_rgb(184, 203, 196)),
                             )
                             .frame(false),
                         )
+                        .on_hover_text("Como funciona")
                         .clicked()
                     {
                         self.help = true;
                     }
-                    ui.add_space(20.);
                 });
             });
+    }
+    fn open_category_dialog(&mut self, editor: bool) {
+        self.category_for_editor = editor;
+        self.category_parent.clear();
+        self.category_name.clear();
+        self.category_error = None;
+        self.category_dialog = true;
     }
     fn bank_page(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
@@ -654,7 +755,7 @@ impl App {
         });
         ui.add_space(22.);
         let w = ui.available_width();
-        let right = 330f32.min(w * 0.39);
+        let right = (w * 0.48).max(380.).min(w - 360.);
         let left = w - right - 20.;
         let content_height = ui.available_height();
         ui.horizontal_top(|ui|{
@@ -664,15 +765,12 @@ impl App {
                     if secondary(ui,"Exportar").clicked(){self.export_bank()}
                 });
                 ui.add_space(8.);
-                ui.horizontal_wrapped(|ui|{
-                    for cat in std::iter::once("Todas".to_owned()).chain(cats.clone()){
-                        let active=self.category==cat;
-                        if ui.add(egui::Button::new(R::new(&cat).size(12.).color(if active{TEAL}else{MUTED})).fill(if active{PALE}else{C::TRANSPARENT}).stroke(Stroke::NONE).corner_radius(6)).clicked(){self.category=cat;}
-                    }
-                });
+                small(ui,"Categoria / assunto");
+                category_dropdown(ui,"bank_category",&mut self.category,&cats,true);
+                if ui.small_button("+ Nova categoria").clicked(){self.open_category_dialog(false);}
                 ui.add_space(8.);
                 let search=self.search.to_lowercase();
-                let filtered:Vec<_>=self.bank.questions.iter().filter(|q|(self.category=="Todas"||self.category==q.category)&&format!("{} {} {}",q.title,q.category,q.text).to_lowercase().contains(&search)).cloned().collect();
+                let filtered:Vec<_>=self.bank.questions.iter().filter(|q|(self.category=="Todas"||category_matches(&q.category,&self.category))&&format!("{} {} {}",q.title,q.category,q.text).to_lowercase().contains(&search)).cloned().collect();
                 ui.horizontal(|ui|{small(ui,format!("{} questões encontradas",filtered.len()));});
                 ui.add_space(4.);
                 egui::ScrollArea::vertical().id_salt("banklist").max_height((content_height-142.).max(150.)).show(ui,|ui|{
@@ -700,12 +798,14 @@ impl App {
             });
             ui.add_space(8.);
             ui.allocate_ui_with_layout(Vec2::new(right,content_height),egui::Layout::top_down(egui::Align::Min),|ui|{
-                egui::ScrollArea::vertical().id_salt("bank_preview").show(ui,|ui|{
+                ui.set_width(right);
+                egui::ScrollArea::vertical().id_salt("bank_preview").auto_shrink([false,false]).show(ui,|ui|{
                 if let Some(q)=self.bank.questions.iter().find(|q|Some(q.id)==self.selected).cloned(){
                     let error=self.bank_errors.get(&q.id).cloned();
                     card().stroke(Stroke::new(if error.is_some(){2f32}else{1f32},if error.is_some(){ERROR}else{LINE})).show(ui,|ui|{
                         ui.set_width(right-42.);
                         ui.horizontal(|ui|{small(ui,"PRÉVIA DA QUESTÃO");ui.with_layout(egui::Layout::right_to_left(egui::Align::Center),|ui|tag(ui,"Exemplo",TEAL,PALE));});
+                        if ui.small_button("Ampliar prévia").clicked(){self.expanded_preview=true;}
                         ui.add_space(12.);ui.label(R::new(&q.title).size(20.).strong());
                         small(ui,&q.category);rule(ui);
                         if let Some(e)=&error{ui.colored_label(ERROR,"Com erro · Edite para corrigir");ui.label(e);ui.label(&q.text);}else if let Ok(p)=preview(&q,self.preview_seed){Self::show_instance(ui,&p,true);}
@@ -745,6 +845,7 @@ impl App {
                 .inner_margin(10)
                 .show(ui, |ui| {
                     ui.set_width(ui.available_width());
+                    ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
                     ui.horizontal_wrapped(|ui| {
                         ui.label(
                             R::new(format!("{}.", answer_label(i)))
@@ -816,11 +917,12 @@ impl App {
         });
         ui.add_space(20.);
         let w = ui.available_width();
-        let side = 310f32.min(w * 0.36);
+        let side = (w * 0.44).max(380.).min(w - 440.);
         let content_height = ui.available_height();
         ui.horizontal_top(|ui|{
             ui.allocate_ui_with_layout(Vec2::new(w-side-22.,content_height),egui::Layout::top_down(egui::Align::Min),|ui|{
-                egui::ScrollArea::vertical().id_salt("editor").max_height(ui.available_height()).show(ui,|ui|{
+                ui.set_width(w-side-22.);
+                egui::ScrollArea::vertical().id_salt("editor").auto_shrink([false,false]).max_height(ui.available_height()).show(ui,|ui|{
                     if !self.draft.import_issues.is_empty(){
                         card().stroke(Stroke::new(2f32,ERROR)).show(ui,|ui|{
                             ui.colored_label(ERROR,"Problemas na importação");
@@ -836,7 +938,10 @@ impl App {
                         ui.label(R::new("1   Identificação e enunciado").size(16.).strong());ui.add_space(10.);
                         let before=self.draft.clone();
                         field(ui,"Título da questão",&mut self.draft.title);
-                        field(ui,"Categoria / assunto",&mut self.draft.category);
+                        small(ui,"Categoria / assunto");
+                        category_dropdown(ui,"editor_category",&mut self.draft.category,&categories(&self.bank),false);
+                        if ui.small_button("+ Nova categoria").clicked(){self.open_category_dialog(true);}
+                        ui.add_space(9.);
                         small(ui,"Enunciado · use {d} para inserir uma variável");
                         ui.add(egui::TextEdit::multiline(&mut self.draft.text).background_color(C::from_rgb(246,248,250)).desired_width(f32::INFINITY).desired_rows(4).margin(Vec2::splat(10.)));
                         ui.horizontal(|ui|{
@@ -892,9 +997,13 @@ impl App {
             });
             ui.add_space(10.);
             ui.allocate_ui_with_layout(Vec2::new(side,content_height),egui::Layout::top_down(egui::Align::Min),|ui|{
-                egui::ScrollArea::vertical().id_salt("editor_preview").show(ui,|ui|{
+                ui.set_width(side);
+                egui::ScrollArea::vertical().id_salt("editor_preview").auto_shrink([false,false]).show(ui,|ui|{
                     card().show(ui,|ui|{
-                        small(ui,"PRÉVIA AO VIVO");ui.add_space(12.);
+                        ui.set_width(side-42.);
+                        small(ui,"PRÉVIA AO VIVO");
+                        if ui.small_button("Ampliar prévia").clicked(){self.expanded_preview=true;}
+                        ui.add_space(12.);
                         let safe= self.draft.variables.len()<=12 && self.draft.answers.len()<=8 && self.draft.variables.iter().all(|v|v.decimals<=6&&v.min.is_finite()&&v.max.is_finite()&&v.min<=v.max&&v.count()>0&&v.count()<usize::MAX/2);
                         if safe{match preview(&self.draft,self.preview_seed){Ok(p)=>Self::show_instance(ui,&p,true),Err(e)=>{ui.colored_label(C::from_rgb(173,89,50),e);}}}
                         else{small(ui,"Ajuste os intervalos para visualizar.");}
@@ -1184,6 +1293,132 @@ impl App {
         });
     }
     fn dialogs(&mut self, ctx: &egui::Context) {
+        if self.category_dialog {
+            egui::Modal::new(egui::Id::new("new_category_dialog")).show(ctx, |ui| {
+                ui.set_width(390.);
+                ui.heading("Nova categoria");
+                small(ui, "Organize assuntos em categorias e subcategorias.");
+                ui.add_space(12.);
+                field(ui, "Nome", &mut self.category_name);
+                small(ui, "Dentro de (opcional)");
+                egui::ComboBox::from_id_salt("category_parent")
+                    .selected_text(if self.category_parent.is_empty() {
+                        "Nenhuma · categoria principal"
+                    } else {
+                        &self.category_parent
+                    })
+                    .width(ui.available_width())
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(
+                            &mut self.category_parent,
+                            String::new(),
+                            "Nenhuma · categoria principal",
+                        );
+                        category_options(ui, &mut self.category_parent, &categories(&self.bank));
+                    });
+                ui.add_space(8.);
+                if !self.category_name.trim().is_empty() {
+                    small(
+                        ui,
+                        format!(
+                            "Caminho: {}{}{}",
+                            self.category_parent,
+                            if self.category_parent.is_empty() {
+                                ""
+                            } else {
+                                " / "
+                            },
+                            self.category_name.trim()
+                        ),
+                    );
+                }
+                if let Some(error) = &self.category_error {
+                    ui.colored_label(ERROR, error);
+                }
+                ui.add_space(12.);
+                ui.horizontal(|ui| {
+                    if primary(ui, "Criar categoria").clicked() {
+                        match new_category(
+                            &self.category_name,
+                            &self.category_parent,
+                            &categories(&self.bank),
+                        ) {
+                            Err(e) => self.category_error = Some(e),
+                            Ok(path) => {
+                                let old = self.bank.clone();
+                                self.bank.category_labels.push(path.clone());
+                                if self.persist() {
+                                    self.sync_plan();
+                                    if self.category_for_editor {
+                                        self.draft.category = path;
+                                        self.dirty = true;
+                                        self.validation = None;
+                                    } else {
+                                        self.category = path;
+                                    }
+                                    self.category_dialog = false;
+                                    self.notify("Categoria criada e salva.", false);
+                                } else {
+                                    self.bank = old;
+                                    self.category_error = Some(self.status.clone());
+                                }
+                            }
+                        }
+                    }
+                    if secondary(ui, "Cancelar").clicked() {
+                        self.category_dialog = false;
+                    }
+                });
+            });
+            if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+                self.category_dialog = false;
+            }
+        }
+        if self.expanded_preview {
+            let question = if self.page == 1 {
+                Some(self.draft.clone())
+            } else {
+                self.bank
+                    .questions
+                    .iter()
+                    .find(|q| Some(q.id) == self.selected)
+                    .cloned()
+            };
+            let mut open = true;
+            egui::Window::new("Prévia ampliada")
+                .open(&mut open)
+                .collapsible(false)
+                .default_width(760.)
+                .default_height(620.)
+                .resizable(true)
+                .show(ctx, |ui| {
+                    egui::ScrollArea::vertical()
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| {
+                            ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
+                            if let Some(q) = &question {
+                                ui.heading(&q.title);
+                                small(ui, q.category.replace('/', " / "));
+                                rule(ui);
+                                match display_preview(q, self.preview_seed) {
+                                    Ok(p) => Self::show_instance(ui, &p, true),
+                                    Err(e) => {
+                                        ui.colored_label(ERROR, e);
+                                        ui.label(&q.text);
+                                    }
+                                }
+                                ui.add_space(16.);
+                                if secondary(ui, "Sortear valores").clicked() {
+                                    self.preview_seed += 1;
+                                }
+                            } else {
+                                ui.label("Selecione uma questão no banco.");
+                            }
+                        });
+                });
+            self.expanded_preview = open && !ctx.input(|i| i.key_pressed(egui::Key::Escape));
+        }
+
         if self.updater.offer {
             if let Some(release) = self.updater.available.clone() {
                 let mut open = true;
@@ -1376,6 +1611,9 @@ impl eframe::App for App {
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
         if self.screenshot.is_none() {
             let _ = std::fs::create_dir_all(&self.data);
+            if let Ok(bytes) = serde_json::to_vec(&self.sidebar_collapsed) {
+                let _ = std::fs::write(self.data.join("menu-recolhido.json"), bytes);
+            }
             if let Ok(bytes) = serde_json::to_vec_pretty(&self.setup) {
                 let _ = std::fs::write(self.data.join("preferencias.json"), bytes);
             }

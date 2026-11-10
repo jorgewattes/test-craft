@@ -9,6 +9,8 @@ use std::{
 pub const WIDTH: f64 = 595.2755905511812;
 pub const HEIGHT: f64 = 841.8897637795276;
 pub const MARGIN: f64 = 56.69291338582677;
+// MoodTest.py add_blank_answer_tables, source offset 0x7e27 (block at 0x7f2f).
+const ANSWER_TABLE_BLOCK: usize = 15;
 
 fn win(c: char) -> u8 {
     match c {
@@ -245,6 +247,50 @@ impl Pdf {
             self.next()
         }
     }
+    fn blank_answer_tables(&mut self, count: usize) {
+        // Keep each header and its empty writing row together on one page.
+        self.ensure(if count > 0 { 78. } else { 20. });
+        self.line("Gabarito (preencha)", 12., true);
+        self.gap(6.);
+        let cell_width = (WIDTH - 2. * MARGIN) / ANSWER_TABLE_BLOCK as f64;
+        for start in (1..=count).step_by(ANSWER_TABLE_BLOCK) {
+            self.ensure(56.);
+            let end = (start + ANSWER_TABLE_BLOCK - 1).min(count);
+            let columns = end - start + 1;
+            let width = cell_width * columns as f64;
+            let top = self.y;
+            let middle = top - 22.;
+            let bottom = top - 48.;
+            self.page.push_str(&format!(
+                "q 0.827451 g {MARGIN:.3} {middle:.3} {width:.3} 22 re f 0 G 0 g 0.75 w\n"
+            ));
+            for y in [top, middle, bottom] {
+                self.page.push_str(&format!(
+                    "{MARGIN:.3} {y:.3} m {:.3} {y:.3} l S\n",
+                    MARGIN + width
+                ));
+            }
+            for column in 0..=columns {
+                let x = MARGIN + column as f64 * cell_width;
+                self.page
+                    .push_str(&format!("{x:.3} {bottom:.3} m {x:.3} {top:.3} l S\n"));
+            }
+            for (column, index) in (start..=end).enumerate() {
+                let label = format!("Q{index:02}");
+                let x = MARGIN
+                    + column as f64 * cell_width
+                    + (cell_width - text_width(&label, 10., true)) / 2.;
+                self.page.push_str(&format!(
+                    "BT 1 0 0 1 {x:.3} {:.3} Tm {} ET\n",
+                    top - 14.,
+                    text_commands(&label, 10., true)
+                ));
+            }
+            self.page.push_str("Q\n");
+            self.y = bottom - 8.;
+        }
+        self.gap(8.);
+    }
     pub fn picture(&mut self, pic: &Picture) {
         use std::io::Write;
         if let Ok(img) = image::load_from_memory(&pic.data) {
@@ -393,17 +439,7 @@ fn exam(batch: &Batch, s: &StudentExam) -> Pdf {
         false,
     );
     p.gap(10.);
-    p.line(
-        &format!(
-            "Respostas: {}",
-            (1..=s.questions.len())
-                .map(|i| format!("{i}: ____"))
-                .collect::<Vec<_>>()
-                .join("   ")
-        ),
-        10.,
-        false,
-    );
+    p.blank_answer_tables(s.questions.len());
     p.gap(16.);
     for (i, q) in s.questions.iter().enumerate() {
         p.ensure(110.);
@@ -565,6 +601,55 @@ pub fn export(batch: &Batch, base: &Path) -> Result<PathBuf, String> {
 mod tests {
     use super::*;
     #[test]
+    fn blank_answer_tables_match_original() {
+        let mechanics: serde_json::Value =
+            serde_json::from_str(include_str!("../mechanics.json")).unwrap();
+        let bank = examples();
+        let mut batch = generate(
+            &bank,
+            &[("Mecânica".into(), 1)],
+            "Aluno Teste",
+            2026,
+            "Prova de referência",
+            "Escola",
+            "Professor",
+            "09/11/2026",
+            "A",
+        )
+        .unwrap();
+        let question = batch.students[0].questions[0].clone();
+        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("checks/answer-tables");
+        fs::create_dir_all(&dir).unwrap();
+        for case in mechanics["original"]["blank_answer_table_cases"]
+            .as_array()
+            .unwrap()
+        {
+            let count = case["question_count"].as_u64().unwrap() as usize;
+            batch.students[0].questions = vec![question.clone(); count];
+            let bytes = exam(&batch, &batch.students[0]).bytes();
+            let content = String::from_utf8_lossy(&bytes);
+            for block in case["headers"].as_array().unwrap() {
+                for label in block.as_array().unwrap() {
+                    let marker = format!("({}) Tj", label.as_str().unwrap());
+                    assert_eq!(
+                        content.matches(&marker).count(),
+                        1,
+                        "missing or repeated {marker} for {count} questions"
+                    );
+                }
+            }
+            fs::write(dir.join(format!("exam-{count}.pdf")), bytes).unwrap();
+        }
+        let mut crossing = Pdf::new("Tabela com quebra de página", "Aluno");
+        crossing.y = MARGIN + 110.;
+        crossing.blank_answer_tables(31);
+        assert_eq!(crossing.pages.len(), 1);
+        assert!(crossing.pages[0].contains("(Q15) Tj"));
+        assert!(!crossing.pages[0].contains("(Q16) Tj"));
+        assert!(crossing.page.contains("(Q16) Tj"));
+        assert!(crossing.page.contains("(Q31) Tj"));
+    }
+    #[test]
     fn answer_letters_match_original() {
         let mechanics: serde_json::Value =
             serde_json::from_str(include_str!("../mechanics.json")).unwrap();
@@ -634,7 +719,26 @@ João",
         let text = String::from_utf8_lossy(&data);
         assert!(text.contains("/Subtype /Image"));
         assert!(text.contains("/BaseFont /Symbol"));
-        assert!(text.contains("/Count 2"));
+        // The answer tables can add pages. The combined PDF must preserve all
+        // pages of both individual exams, including image resources.
+        let count_pages = |data: &[u8]| {
+            String::from_utf8_lossy(data)
+                .matches("/Type /Page ")
+                .count()
+        };
+        let individual_pages: usize = fs::read_dir(&folder)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .filter(|path| {
+                path.file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .starts_with("prova_")
+            })
+            .map(|path| count_pages(&fs::read(path).unwrap()))
+            .sum();
+        assert!(individual_pages >= 2);
+        assert_eq!(count_pages(&data), individual_pages);
     }
     #[test]
     fn pdf_has_valid_xref_and_accents() {

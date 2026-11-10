@@ -96,6 +96,8 @@ pub struct Question {
 pub struct Bank {
     pub version: u32,
     pub questions: Vec<Question>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub category_labels: Vec<String>,
 }
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct Instance {
@@ -320,7 +322,9 @@ impl<'a> Parser<'a> {
                 // _eval_ast's fn(*args), source offset 0x1112, propagates math
                 // domain/overflow errors immediately, even inside another operation.
                 if !value.is_finite() {
-                    return Err(format!("Resultado indefinido ou fora do limite numérico em {name}."));
+                    return Err(format!(
+                        "Resultado indefinido ou fora do limite numérico em {name}."
+                    ));
                 }
                 return Ok(value);
             }
@@ -638,12 +642,59 @@ pub fn validate(q: &Question) -> Result<String, String> {
     })
 }
 pub fn categories(bank: &Bank) -> Vec<String> {
-    bank.questions
+    let mut labels = BTreeSet::new();
+    for path in bank
+        .category_labels
         .iter()
-        .map(|q| q.category.clone())
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect()
+        .chain(bank.questions.iter().map(|q| &q.category))
+    {
+        if !path.is_empty() {
+            labels.insert(path.clone());
+        }
+        for (index, _) in path.match_indices('/') {
+            if index > 0 {
+                labels.insert(path[..index].to_owned());
+            }
+        }
+    }
+    let mut labels: Vec<_> = labels.into_iter().collect();
+    labels.sort_by(|a, b| a.split('/').cmp(b.split('/')));
+    labels
+}
+pub fn category_matches(category: &str, parent: &str) -> bool {
+    category == parent
+        || category
+            .strip_prefix(parent)
+            .is_some_and(|s| s.starts_with('/'))
+}
+pub fn new_category(name: &str, parent: &str, existing: &[String]) -> Result<String, String> {
+    let name = name.trim();
+    if name.is_empty() || name.contains('/') || name.chars().any(char::is_control) {
+        return Err(
+            "Informe um nome sem barras. Escolha a categoria principal no campo abaixo.".into(),
+        );
+    }
+    if !parent.is_empty() && !existing.iter().any(|c| c == parent) {
+        return Err("Selecione uma categoria principal existente.".into());
+    }
+    let path = if parent.is_empty() {
+        name.to_owned()
+    } else {
+        format!("{parent}/{name}")
+    };
+    if path == "Todas" {
+        return Err("Escolha outro nome: Todas é usado para exibir o banco completo.".into());
+    }
+    if path.len() > 100 {
+        return Err("O caminho da categoria deve ter até 100 bytes.".into());
+    }
+    if existing
+        .iter()
+        .any(|c| c.to_lowercase() == path.to_lowercase())
+    {
+        return Err("Esta categoria já existe.".into());
+    }
+    Ok(path)
 }
 pub fn generate(
     bank: &Bank,
@@ -801,7 +852,7 @@ pub fn examples() -> Bank {
                 .collect(),
         }
     }
-    Bank{version:1,questions:vec![
+    Bank{version:1,category_labels:vec![],questions:vec![
         q(1,"Velocidade média","Mecânica","Um ciclista percorre {d} metros em {t} segundos. Qual é sua velocidade média?",&[("d",100.,300.),("t",10.,30.)],&["{={d}/{t}} m/s","{={d}*{t}} m/s","{={d}/{t}+5} m/s","{={d}/{t}/2} m/s"]),
         q(2,"Segunda lei de Newton","Mecânica","Um corpo de massa {m} kg está sujeito a uma aceleração de {a} m/s². Qual é a força resultante?",&[("m",2.,20.),("a",2.,8.)],&["{={m}*{a}} N","{={m}*{a}+10} N","{={m}*{a}/2} N","{={m}*{a}+5} N"]),
         q(3,"Energia cinética","Mecânica","Um objeto de massa {m} kg se move a {v} m/s. Calcule sua energia cinética.",&[("m",2.,12.),("v",2.,10.)],&["{={m}*{v}^2/2} J","{={m}*{v}^2} J","{={m}*{v}^2/4} J","{={m}*{v}^2*1.5} J"]),
@@ -1096,6 +1147,7 @@ pub fn import_xml(path: &Path) -> Result<Bank, String> {
     }
     Ok(Bank {
         version: 1,
+        category_labels: vec![],
         questions,
     })
 }
@@ -1103,6 +1155,53 @@ pub fn import_xml(path: &Path) -> Result<Bank, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn hierarchical_categories_survive_export_and_legacy_banks() {
+        let mut bank: Bank = serde_json::from_str(r#"{"version":1,"questions":[]}"#).unwrap();
+        assert!(categories(&bank).is_empty());
+        bank.category_labels = vec![
+            "Física".into(),
+            "Física/Óptica/Lentes".into(),
+            "Física aplicada".into(),
+        ];
+        let mut q = examples().questions.remove(0);
+        q.category = "Física/Mecânica".into();
+        bank.questions.push(q);
+        let restored: Bank = serde_json::from_slice(&serde_json::to_vec(&bank).unwrap()).unwrap();
+        assert_eq!(
+            categories(&restored),
+            vec![
+                "Física",
+                "Física/Mecânica",
+                "Física/Óptica",
+                "Física/Óptica/Lentes",
+                "Física aplicada"
+            ]
+        );
+        assert!(category_matches("Física/Óptica/Lentes", "Física/Óptica"));
+        assert!(!category_matches("Física aplicada", "Física"));
+        bank.questions.clear();
+        assert!(categories(&bank).contains(&"Física/Óptica/Lentes".into()));
+    }
+    #[test]
+    fn category_creation_validates_parent_name_and_duplicates() {
+        let existing = vec!["Física".into(), "Física/Óptica".into()];
+        assert_eq!(
+            new_category("  Lentes  ", "Física/Óptica", &existing).unwrap(),
+            "Física/Óptica/Lentes"
+        );
+        for (name, parent) in [
+            (" ", ""),
+            ("A/B", ""),
+            ("física", ""),
+            ("Óptica", "Física"),
+            ("Lentes", "Inexistente"),
+            ("Todas", ""),
+        ] {
+            assert!(new_category(name, parent, &existing).is_err());
+        }
+        assert!(new_category(&"x".repeat(101), "", &existing).is_err());
+    }
     #[test]
     fn imports_mixed_errors_and_reopens_saved_questions() {
         let folder = Path::new(env!("CARGO_MANIFEST_DIR")).join("checks/tolerant-import");
@@ -1206,13 +1305,23 @@ mod tests {
     fn matches_original_expression_domains() {
         let mechanics: serde_json::Value =
             serde_json::from_str(include_str!("../mechanics.json")).unwrap();
-        for case in mechanics["original"]["expression_domain_cases"].as_array().unwrap() {
+        for case in mechanics["original"]["expression_domain_cases"]
+            .as_array()
+            .unwrap()
+        {
             let expression = case["expression"].as_str().unwrap();
             let result = eval(expression, &BTreeMap::new());
             if case.get("error").is_some() {
-                assert!(result.is_err(), "original rejects {expression}; rebuild returned {result:?}");
+                assert!(
+                    result.is_err(),
+                    "original rejects {expression}; rebuild returned {result:?}"
+                );
             } else {
-                assert_eq!(result.unwrap(), case["value"].as_f64().unwrap(), "{expression}");
+                assert_eq!(
+                    result.unwrap(),
+                    case["value"].as_f64().unwrap(),
+                    "{expression}"
+                );
             }
         }
     }
