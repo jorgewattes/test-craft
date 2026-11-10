@@ -1,5 +1,6 @@
 # Test Craft 0.3.0
 
+- Cálculos propagam erros de domínio, estouro de funções matemáticas e potência de zero com expoente negativo, conforme o fonte original, mesmo quando uma operação posterior poderia ocultar o erro.
 - Atalho de conexão ao GitHub corrigido para pastas com proprietário diferente, sem exceção global de confiança no Git.
 - Publicação no GitHub inclui MSI, ZIP e seus checksums SHA-256, com notas apenas da versão atual.
 - Conferência adicional do fonte original: datasets podem usar nomes de constantes/funções, com precedência correta; importação preserva a categoria declarada na própria questão.

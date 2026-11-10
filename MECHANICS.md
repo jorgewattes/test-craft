@@ -1,5 +1,54 @@
 # Regras verificadas no original
 
+## Conferência atual: propagação de erros de cálculo (09/11/2026)
+
+O programa principal `C:/dev/MoodTest/MoodTest.py` foi novamente aberto com
+`core_target_open`; `core_session_show` confirmou Deep mode. Foram aguardados,
+em sequência, os resultados de 3 buscas `native_strings_find` (nomes,
+configurações e mensagens), 4 consultas de referências por nome e 21 chamadas
+`native_function_pseudocode`, cobrindo todas as funções da tabela abaixo.
+Todos recusaram o formato Python com `not_supported: Unknown file magic`.
+O registro completo desta tentativa está em
+[checks/deep-review-latest.json](checks/deep-review-latest.json).
+Não houve descompilação nativa bem-sucedida: os locais recuperados são offsets
+do arquivo fonte, e `native_address` permanece `null`.
+
+Seguindo `_replace_calculated_blocks` → `avaliar_expressao_com_variaveis` →
+`avaliar_expressao` → `_eval_ast` no fonte legível, foi encontrada e corrigida
+uma diferença adicional em `src/model.rs`:
+
+| Função / localização real no fonte | Regra recuperada | Resultado observado no original |
+|---|---|---|
+| `_eval_ast`, `0xc7b`, linha 125; chamada matemática `0x1112` | Erros de domínio e estouro de `math` interrompem a avaliação da subexpressão. Uma potência externa de expoente zero não apaga o erro anterior. | `sqrt(-1)^0` e `log(0)^0`: `ValueError`; `exp(1000)^0`: `OverflowError`. |
+| `_eval_ast`, `0xc7b`; operador binário `0xea4` | Zero elevado a expoente negativo gera erro imediatamente. | `(0^-1)^0`: `ZeroDivisionError`. |
+| Mesmas funções | Operações válidas continuam disponíveis, inclusive subexpressões acima do limite final da reconstrução. | `sqrt(0)^0 = 1`; `exp(0)^0 = 1`; `(-2)^2 = 4`; `(1e15*10)/10 = 1e15`; `(10^1000)^0 = 1`. |
+
+Evidências dos locais: chamada matemática
+`ev_ffa61ec02c7894d1ceff206c11781cbe918dacb184c23518c8d8016a773ca613`,
+operador binário
+`ev_1f997a123735273ec98d0980b70cc7326b44f5c55017b37c53f2209198e0b04e`.
+Os nove resultados foram obtidos executando apenas definições AST isoladas do
+original, sem importar o aplicativo, e estão em
+[checks/source-domain-reference.json](checks/source-domain-reference.json).
+Também foram incorporados a `mechanics.json`, em `original.expression_domain_cases`.
+O teste `matches_original_expression_domains` falhou antes da correção porque
+`sqrt(-1)^0` retornava `Ok(1.0)`. Agora chamadas matemáticas rejeitam resultados
+não finitos imediatamente, e potências verificam zero com expoente negativo.
+A decisão de produto de bloquear fórmulas inválidas permanece: o renderizador
+original conserva o bloco com erro no texto, conforme descrito abaixo.
+
+As regras já recuperadas continuam sendo usadas: duas casas decimais,
+`Decimal(str(x)).quantize(10^-2, ROUND_HALF_UP)`, sorteio independente por entrada
+de dataset, remapeamento das alternativas corretas após embaralhamento,
+seleção sem reposição por categoria e A4 com margens de 2 cm. A tabela completa
+de funções, fórmulas e offsets está abaixo.
+
+Verificação desta conferência: `cargo test --locked` passou com 20 testes;
+`cargo build --release --locked` concluiu a compilação otimizada. A nova chamada
+`rebuild_check` passou em build, inicialização/captura da interface (2070 × 1350)
+e mecânicas (15 valores, 12 com fonte e 3 decisões novas). Os resultados
+históricos das seções seguintes pertencem às revisões anteriores.
+
 ## Nova conferência solicitada em 09/11/2026
 
 O alvo original foi reaberto com `core_target_open`, em Deep mode. Nesta

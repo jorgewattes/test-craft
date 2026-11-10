@@ -100,7 +100,7 @@
     "mode": "deep",
     "native_pseudocode_functions_awaited": 21,
     "native_result": "not_supported: Unknown file magic (Python source)",
-    "attempt_log": "checks/native-review-2026-11-09.json",
+    "attempt_log": "checks/deep-review-latest.json",
     "fallback": "direct source review with AST call references and byte offsets",
     "native_strings_queries_awaited": 3,
     "native_reference_queries_awaited": 4
@@ -1727,6 +1727,44 @@
       {
         "xml": "<quiz><question type=\"multichoice\"><category><text>Fisica/Eletricidade</text></category><name><text>Local</text></name><questiontext><text>Q</text></questiontext><answer fraction=\"100\"><text>A</text></answer></question></quiz>",
         "expected": "Fisica/Eletricidade"
+      }
+    ],
+    "expression_domain_cases": [
+      {
+        "expression": "sqrt(-1)^0",
+        "error": "ValueError"
+      },
+      {
+        "expression": "log(0)^0",
+        "error": "ValueError"
+      },
+      {
+        "expression": "exp(1000)^0",
+        "error": "OverflowError"
+      },
+      {
+        "expression": "(0^-1)^0",
+        "error": "ZeroDivisionError"
+      },
+      {
+        "expression": "(10^1000)^0",
+        "value": 1
+      },
+      {
+        "expression": "sqrt(0)^0",
+        "value": 1.0
+      },
+      {
+        "expression": "exp(0)^0",
+        "value": 1.0
+      },
+      {
+        "expression": "(-2)^2",
+        "value": 4
+      },
+      {
+        "expression": "(1e15*10)/10",
+        "value": 1000000000000000.0
       }
     ]
   }

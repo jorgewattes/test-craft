@@ -4,7 +4,7 @@ Crie questões calculadas, organize seu banco e gere provas e gabaritos individu
 
 ## Instalar
 
-Baixe **test-craft-0.3.0-windows-x64.msi** em [Releases](https://github.com/jorgewattes/test-craft/releases/latest), execute o instalador e abra **Test Craft** pelo menu Iniciar. Requer Windows 10/11 de 64 bits e suporte a OpenGL.
+Baixe o [instalador MSI do Test Craft 0.3.0](https://github.com/jorgewattes/test-craft/releases/download/v0.3.0/test-craft-0.3.0-windows-x64.msi), execute o instalador e abra **Test Craft** pelo menu Iniciar. Requer Windows 10/11 de 64 bits e suporte a OpenGL.
 
 Para atualizar, feche o aplicativo e execute o novo MSI. Os dados ficam em **%LOCALAPPDATA%\Test Craft\data** e são preservados na atualização e desinstalação. Copie essa pasta para fazer backup.
 

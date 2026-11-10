@@ -235,13 +235,22 @@ impl<'a> Parser<'a> {
     fn power(&mut self) -> Result<f64, String> {
         let x = self.atom()?;
         if self.eat('^') {
-            return Ok(x.powf(self.unary()?));
+            return self.exponent(x);
         }
         if self.peek() == '*' && self.chars.get(self.pos + 1) == Some(&'*') {
             self.pos += 2;
-            return Ok(x.powf(self.unary()?));
+            return self.exponent(x);
         }
         Ok(x)
+    }
+    fn exponent(&mut self, base: f64) -> Result<f64, String> {
+        let exponent = self.unary()?;
+        // MoodTest.py _eval_ast (0xc7b), operator call at source offset 0xea4:
+        // Python raises at zero to a negative power, before an outer ^0 can hide it.
+        if base == 0.0 && exponent < 0.0 {
+            return Err("Zero não pode ser elevado a um expoente negativo.".into());
+        }
+        Ok(base.powf(exponent))
     }
     fn atom(&mut self) -> Result<f64, String> {
         if self.eat('(') {
@@ -297,7 +306,7 @@ impl<'a> Parser<'a> {
                 if !self.eat(')') {
                     return Err("Feche os parênteses da função.".into());
                 }
-                return match name.as_str() {
+                let value = match name.as_str() {
                     "sqrt" => Ok(x.sqrt()),
                     "abs" => Ok(x.abs()),
                     "sin" => Ok(x.sin()),
@@ -307,7 +316,13 @@ impl<'a> Parser<'a> {
                     "log10" => Ok(x.log10()),
                     "exp" => Ok(x.exp()),
                     _ => Err(format!("Função {name} não permitida.")),
-                };
+                }?;
+                // _eval_ast's fn(*args), source offset 0x1112, propagates math
+                // domain/overflow errors immediately, even inside another operation.
+                if !value.is_finite() {
+                    return Err(format!("Resultado indefinido ou fora do limite numérico em {name}."));
+                }
+                return Ok(value);
             }
             // MoodTest.py _eval_ast (0xc7b), context lookup at 0x118c:
             // dataset values precede constants; calls above still use allowed functions.
@@ -1185,6 +1200,20 @@ mod tests {
                 case["expected"].as_str().unwrap(),
                 "original source case: {text}"
             );
+        }
+    }
+    #[test]
+    fn matches_original_expression_domains() {
+        let mechanics: serde_json::Value =
+            serde_json::from_str(include_str!("../mechanics.json")).unwrap();
+        for case in mechanics["original"]["expression_domain_cases"].as_array().unwrap() {
+            let expression = case["expression"].as_str().unwrap();
+            let result = eval(expression, &BTreeMap::new());
+            if case.get("error").is_some() {
+                assert!(result.is_err(), "original rejects {expression}; rebuild returned {result:?}");
+            } else {
+                assert_eq!(result.unwrap(), case["value"].as_f64().unwrap(), "{expression}");
+            }
         }
     }
     #[test]
