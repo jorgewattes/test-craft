@@ -4,11 +4,10 @@ use std::{
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
-// MoodTest.py Exam.export_pdf, source offset 0x95d0: A4, margins 2 * cm.
-// Full precision results of 210/25.4*72, 297/25.4*72 and 2/2.54*72.
+// A4 retained; user-requested compact layout uses 1.5 cm margins.
 pub const WIDTH: f64 = 595.2755905511812;
 pub const HEIGHT: f64 = 841.8897637795276;
-pub const MARGIN: f64 = 56.69291338582677;
+pub const MARGIN: f64 = 42.51968503937008;
 // MoodTest.py add_blank_answer_tables, source offset 0x7e27 (block at 0x7f2f).
 const ANSWER_TABLE_BLOCK: usize = 15;
 
@@ -149,6 +148,35 @@ struct PdfImage {
     height: u32,
     data: Vec<u8>,
 }
+fn wrapped_lines(t: &str, size: f64, bold: bool) -> Vec<String> {
+    let max = WIDTH - 2. * MARGIN;
+    let mut lines = vec![];
+    for para in t.split('\n') {
+        let mut line = String::new();
+        for word in para.split_whitespace() {
+            let candidate = if line.is_empty() {
+                word.to_owned()
+            } else {
+                format!("{line} {word}")
+            };
+            if text_width(&candidate, size, bold) <= max {
+                line = candidate;
+                continue;
+            }
+            if !line.is_empty() {
+                lines.push(std::mem::take(&mut line));
+            }
+            for c in word.chars() {
+                if text_width(&format!("{line}{c}"), size, bold) > max && !line.is_empty() {
+                    lines.push(std::mem::take(&mut line));
+                }
+                line.push(c);
+            }
+        }
+        lines.push(line);
+    }
+    lines
+}
 pub struct Pdf {
     pictures: Vec<PdfImage>,
     pages: Vec<String>,
@@ -175,22 +203,28 @@ impl Pdf {
     fn begin(&mut self) {
         self.number += 1;
         self.y = HEIGHT - MARGIN;
-        self.page.push_str("0.08 0.28 0.25 rg\n");
-        self.draw(&self.title.clone(), 14., true);
-        self.page.push_str("0.22 0.26 0.30 rg\n");
+        self.page.push_str("0.10 0.20 0.19 rg\n");
         self.line(
-            &format!("{}  |  Página {}", self.name, self.number),
-            10.,
-            false,
+            &self.title.clone(),
+            if self.number == 1 { 16. } else { 11. },
+            true,
         );
-        self.y -= 10.;
+        self.gap(3.);
+        self.line(&format!("Aluno(a): {}", self.name), 10., false);
+        self.gap(4.);
         self.page.push_str(&format!(
-            "0.82 0.86 0.86 RG {MARGIN} {} m {} {} l S\n",
+            "0.22 0.38 0.34 RG 1 w {MARGIN} {} m {} {} l S\n",
             self.y,
             WIDTH - MARGIN,
             self.y
         ));
-        self.y -= 20.;
+        let footer = format!("Página {}", self.number);
+        let x = WIDTH - MARGIN - text_width(&footer, 8., false);
+        self.page.push_str(&format!(
+            "0.35 g BT 1 0 0 1 {x:.3} 24 Tm {} ET 0 g\n",
+            text_commands(&footer, 8., false)
+        ));
+        self.y -= 12.;
     }
     fn draw(&mut self, t: &str, size: f64, bold: bool) {
         self.page.push_str(&format!(
@@ -198,52 +232,25 @@ impl Pdf {
             self.y,
             text_commands(t, size, bold)
         ));
-        self.y -= size * 1.45;
+        self.y -= size * 1.22;
     }
     fn next(&mut self) {
         self.pages.push(std::mem::take(&mut self.page));
         self.begin();
     }
     pub fn line(&mut self, t: &str, size: f64, bold: bool) {
-        let max = WIDTH - 2. * MARGIN;
-        let mut line = String::new();
-        for para in t.split('\n') {
-            for word in para.split_whitespace() {
-                if text_width(&line, size, bold) + text_width(word, size, bold) > max
-                    && !line.is_empty()
-                {
-                    if self.y < MARGIN + 30. {
-                        self.next()
-                    }
-                    self.draw(&line, size, bold);
-                    line.clear();
-                }
-                // Split a single oversized token instead of clipping it.
-                for c in word.chars() {
-                    if text_width(&line, size, bold) + text_width(&c.to_string(), size, bold) > max
-                    {
-                        if self.y < MARGIN + 30. {
-                            self.next()
-                        }
-                        self.draw(&line, size, bold);
-                        line.clear();
-                    }
-                    line.push(c);
-                }
-                line.push(' ');
+        for line in wrapped_lines(t, size, bold) {
+            if self.y < MARGIN + size {
+                self.next();
             }
-            if self.y < MARGIN + 30. {
-                self.next()
-            }
-            self.draw(line.trim_end(), size, bold);
-            line.clear();
+            self.draw(&line, size, bold);
         }
     }
     pub fn gap(&mut self, n: f64) {
         self.y -= n;
     }
     pub fn ensure(&mut self, height: f64) {
-        if self.y - height < MARGIN + 20. {
+        if self.y - height < MARGIN {
             self.next()
         }
     }
@@ -432,35 +439,70 @@ fn exam(batch: &Batch, s: &StudentExam) -> Pdf {
             p.line(t, 10., false)
         }
     }
-    p.gap(12.);
+    p.gap(5.);
     p.line(
         "Responda às questões abaixo. Assinale as alternativas corretas.",
-        10.,
+        9.,
         false,
     );
-    p.gap(10.);
+    p.gap(5.);
     p.blank_answer_tables(s.questions.len());
-    p.gap(16.);
+    p.gap(4.);
     for (i, q) in s.questions.iter().enumerate() {
-        p.ensure(110.);
-        p.line(&format!("{}. {}", i + 1, q.text), 11., true);
-        p.gap(5.);
+        let title = format!("{}. {}", i + 1, q.text);
+        let height = wrapped_lines(&title, 10.5, true).len() as f64 * 10.5 * 1.22
+            + q.answers
+                .iter()
+                .enumerate()
+                .map(|(j, a)| {
+                    wrapped_lines(
+                        &format!("   {}) {}", (b'a' + j as u8) as char, a.text),
+                        10.5,
+                        false,
+                    )
+                    .len() as f64
+                        * 10.5
+                        * 1.22
+                        + a.pictures.iter().map(picture_height).sum::<f64>()
+                })
+                .sum::<f64>()
+            + q.pictures.iter().map(picture_height).sum::<f64>()
+            + 12.;
+        // Keep ordinary questions whole; oversized questions flow across pages.
+        let fresh_capacity = HEIGHT - 2. * MARGIN - 70.;
+        p.ensure(if height <= fresh_capacity {
+            height
+        } else {
+            45.
+        });
+        p.line(&title, 10.5, true);
+        p.gap(3.);
         for pic in &q.pictures {
             p.picture(pic)
         }
         for (j, a) in q.answers.iter().enumerate() {
             p.line(
                 &format!("   {}) {}", (b'a' + j as u8) as char, a.text),
-                11.,
+                10.5,
                 false,
             );
             for pic in &a.pictures {
                 p.picture(pic)
             }
         }
-        p.gap(18.);
+        p.gap(9.);
     }
     p
+}
+fn picture_height(pic: &Picture) -> f64 {
+    image::load_from_memory(&pic.data)
+        .map(|img| {
+            let rgb = img.thumbnail(1280, 1280);
+            let w = rgb.width() as f64;
+            let h = rgb.height() as f64;
+            h * (350. / w).min(220. / h).min(1.) + 12.
+        })
+        .unwrap_or(0.)
 }
 fn key(batch: &Batch, s: &StudentExam) -> Pdf {
     let mut p = Pdf::new("Gabarito individual", &s.name);
@@ -495,17 +537,29 @@ fn key(batch: &Batch, s: &StudentExam) -> Pdf {
     p
 }
 fn safe(name: &str) -> String {
-    let s: String = name
-        .chars()
-        .map(|c| {
-            if c.is_alphanumeric() || c == '-' || c == '_' {
-                c
-            } else {
-                '_'
-            }
-        })
-        .take(90)
-        .collect();
+    // MoodTest.py App._sanitizar_nome, source offset 0x1340f, called at 0x13be2:
+    // trim, collapse invalid-character runs, then collapse whitespace runs.
+    // These are separate passes: "Ana / Silva" becomes "Ana___Silva".
+    let mut normalized = String::new();
+    let mut previous_invalid = false;
+    for c in name.trim().chars() {
+        let invalid = matches!(c, '\\' | '/' | ':' | '*' | '?' | '"' | '<' | '>' | '|');
+        if !invalid || !previous_invalid {
+            normalized.push(if invalid { '_' } else { c });
+        }
+        previous_invalid = invalid;
+    }
+    let mut s = String::new();
+    let mut previous_space = false;
+    for c in normalized.chars() {
+        let space = c.is_whitespace() || matches!(c, '\u{1c}'..='\u{1f}');
+        if !space || !previous_space {
+            s.push(if space { '_' } else { c });
+        }
+        previous_space = space;
+    }
+    // Product limit retained; the original does not truncate names.
+    let s: String = s.chars().take(90).collect();
     if s.is_empty() {
         "aluno".into()
     } else {
@@ -600,6 +654,80 @@ pub fn export(batch: &Batch, base: &Path) -> Result<PathBuf, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn compact_exams_keep_questions_together_and_wrap_long_headers() {
+        let bank = examples();
+        let mut batch = generate(
+            &bank,
+            &[("Mecânica".into(), 1)],
+            "Aluno Exemplo",
+            2026,
+            "Avaliação de Física",
+            "Escola Exemplo",
+            "Maria Silva",
+            "10/11/2026",
+            "3º A",
+        )
+        .unwrap();
+        let mut q = batch.students[0].questions[0].clone();
+        q.text = "Qual alternativa está correta?".into();
+        q.pictures.clear();
+        q.answers = (0..4)
+            .map(|i| Answer {
+                text: format!("Alternativa {}", i + 1),
+                correct: i == 0,
+                pictures: vec![],
+            })
+            .collect();
+        batch.students[0].questions = vec![q; 20];
+        let pages = exam(&batch, &batch.students[0]).finish_pages();
+        assert!(
+            pages.len() <= 3,
+            "20 short questions should use at most three pages"
+        );
+        for page in &pages {
+            assert_eq!(
+                page.matches("correta?").count(),
+                page.matches("Alternativa 4").count(),
+                "Question separated from its answers"
+            );
+        }
+        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("checks/compact-pdf");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join("exam.pdf"),
+            exam(&batch, &batch.students[0]).bytes(),
+        )
+        .unwrap();
+        batch.title =
+            "Avaliação com título muito extenso de Física e Ciências da Natureza ".repeat(4);
+        batch.students[0].name = "Nome de estudante composto ".repeat(6);
+        batch.institution = "Instituição de ensino com nome extenso ".repeat(4);
+        fs::write(
+            dir.join("long-header.pdf"),
+            exam(&batch, &batch.students[0]).bytes(),
+        )
+        .unwrap();
+        for line in wrapped_lines(&batch.title, 16., true) {
+            assert!(text_width(&line, 16., true) <= WIDTH - 2. * MARGIN);
+        }
+    }
+    #[test]
+    fn student_filenames_match_original() {
+        let mechanics: serde_json::Value =
+            serde_json::from_str(include_str!("../mechanics.json")).unwrap();
+        for case in mechanics["original"]["filename_cases"].as_array().unwrap() {
+            let name = case["name"].as_str().unwrap();
+            // Keep this app's existing 90-character filename limit.
+            let expected: String = case["expected"]
+                .as_str()
+                .unwrap()
+                .chars()
+                .take(90)
+                .collect();
+            assert_eq!(safe(name), expected, "original filename for {name:?}");
+        }
+    }
     #[test]
     fn blank_answer_tables_match_original() {
         let mechanics: serde_json::Value =
@@ -750,7 +878,7 @@ João",
         let s = String::from_utf8_lossy(&b);
         assert!(s.starts_with("%PDF-1.4"));
         assert!(s.contains("\\343"));
-        assert!(s.contains("/Count 3") || s.contains("/Count 4"));
+        assert!(s.contains("/Count 2"));
         let start = s
             .rsplit("startxref\n")
             .nth(0)

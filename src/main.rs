@@ -1,12 +1,14 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+mod bank_view;
 mod model;
 mod pdf;
+mod storage;
 mod updater;
 use eframe::egui::{self, Color32 as C, Margin, RichText as R, Stroke, Vec2};
 use model::*;
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     path::PathBuf,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -304,6 +306,12 @@ impl Default for Setup {
     }
 }
 struct App {
+    store: Option<storage::BankStore>,
+    index: bank_view::BankIndex,
+    list_page: usize,
+    validator: bank_view::Validator,
+    validation_generation: u64,
+    pending_validation: BTreeSet<u64>,
     bank: Bank,
     bank_errors: BTreeMap<u64, String>,
     data: PathBuf,
@@ -338,6 +346,11 @@ struct App {
     category_name: String,
     category_parent: String,
     category_error: Option<String>,
+    category_edit: Option<String>,
+    checked: BTreeSet<u64>,
+    transfer: Option<bool>,
+    transfer_destination: String,
+    batch_delete: Option<BTreeSet<u64>>,
     expanded_preview: bool,
 }
 impl App {
@@ -368,23 +381,19 @@ impl App {
             .insert(egui::TextStyle::Heading, egui::FontId::proportional(25.));
         cc.egui_ctx.set_style(style);
         let data = data_root();
-        let bankpath = data.join("banco.json");
-        let (mut bank, error) = if bankpath.exists() {
-            match read_bank(&bankpath) {
-                Ok(b) => (b, None),
-                Err(e) => (
-                    Bank {
-                        version: 1,
-                        questions: vec![],
-                        category_labels: vec![],
-                    },
-                    Some(format!(
-                        "Não foi possível abrir o banco: {e} O arquivo foi preservado."
-                    )),
-                ),
-            }
-        } else {
-            (examples(), None)
+        let (store, mut bank, error) = match storage::BankStore::open(&data) {
+            Ok((store, bank)) => (Some(store), bank, None),
+            Err(e) => (
+                None,
+                Bank {
+                    version: 1,
+                    questions: vec![],
+                    category_labels: vec![],
+                },
+                Some(format!(
+                    "Não foi possível abrir o banco: {e} Os arquivos foram preservados."
+                )),
+            ),
         };
         bank.category_labels = categories(&bank);
         let setup = std::fs::read(data.join("preferencias.json"))
@@ -394,12 +403,16 @@ impl App {
         let updater = updater::Updater::load(&data);
         let update_repository = updater.settings.repository.clone();
         let update_automatic = updater.settings.automatic;
+        let validator = bank_view::Validator::new(cc.egui_ctx.clone());
+        let validation_generation = validator.submit(&bank);
         let mut app = Self {
-            bank_errors: bank
-                .questions
-                .iter()
-                .filter_map(|q| validate(q).err().map(|e| (q.id, e)))
-                .collect(),
+            store,
+            index: bank_view::BankIndex::new(&bank),
+            list_page: 0,
+            validator,
+            validation_generation,
+            pending_validation: bank.questions.iter().map(|q| q.id).collect(),
+            bank_errors: BTreeMap::new(),
             selected: bank.questions.first().map(|q| q.id),
             draft: examples().questions.remove(0),
             bank,
@@ -438,13 +451,15 @@ impl App {
             category_name: String::new(),
             category_parent: String::new(),
             category_error: None,
+            category_edit: None,
+            checked: BTreeSet::new(),
+            transfer: None,
+            transfer_destination: String::new(),
+            batch_delete: None,
             expanded_preview: false,
         };
         app.sync_plan();
         app.refresh_history();
-        if !bankpath.exists() && app.screenshot.is_none() {
-            app.persist();
-        }
         if page == 1 {
             app.begin_new();
         }
@@ -454,24 +469,28 @@ impl App {
         self.status = msg.into();
         self.status_error = error;
     }
-    fn persist(&mut self) -> bool {
-        self.batch = None;
+    fn persist(&mut self, previous: &Bank) -> bool {
         self.bank.category_labels = categories(&self.bank);
-        if let Err(e) = save_bank(&self.data.join("banco.json"), &self.bank) {
+        let result = self
+            .store
+            .as_mut()
+            .ok_or_else(|| "O banco não está disponível. Reabra o aplicativo.".to_owned())
+            .and_then(|store| store.save(&self.bank, Some(previous)));
+        if let Err(e) = result {
             self.notify(format!("Não foi possível salvar: {e}"), true);
             false
         } else {
-            self.bank_errors = self
-                .bank
-                .questions
-                .iter()
-                .filter_map(|q| validate(q).err().map(|e| (q.id, e)))
-                .collect();
+            self.batch = None;
+            self.index = bank_view::BankIndex::new(&self.bank);
+            self.bank_errors
+                .retain(|id, _| self.index.positions.contains_key(id));
+            self.pending_validation = self.bank.questions.iter().map(|q| q.id).collect();
+            self.validation_generation = self.validator.submit(&self.bank);
             true
         }
     }
     fn sync_plan(&mut self) {
-        let cats = categories(&self.bank);
+        let cats = self.index.categories.clone();
         self.setup.plan.retain(|(c, _)| cats.contains(c));
         for c in cats {
             if !self.setup.plan.iter().any(|p| p.0 == c) {
@@ -501,7 +520,10 @@ impl App {
         self.draft = examples().questions.remove(0);
         self.draft.id = now();
         self.draft.title.clear();
-        self.draft.category = categories(&self.bank)
+        self.draft.category = self
+            .index
+            .categories
+            .clone()
             .into_iter()
             .next()
             .unwrap_or_default();
@@ -531,7 +553,10 @@ impl App {
                 Err(e) => self.notify(format!("Importação cancelada: {e}"), true),
                 Ok(b) => {
                     let count = b.questions.len();
-                    let errors = b.questions.iter().filter(|q| validate(q).is_err()).count();
+                    if self.bank.questions.len() + count > 10000 {
+                        self.notify("A importação excederia o limite de 10.000 questões.", true);
+                        return;
+                    }
                     let old = self.bank.clone();
                     self.bank.category_labels.extend(b.category_labels);
                     let mut next = self.bank.questions.iter().map(|q| q.id).max().unwrap_or(0) + 1;
@@ -540,10 +565,10 @@ impl App {
                         next += 1;
                         self.bank.questions.push(q)
                     }
-                    if self.persist() {
+                    if self.persist(&old) {
                         self.sync_plan();
                         self.notify(
-                            format!("{count} questões importadas e salvas. {errors} com erro, marcadas com borda vermelha."),
+                            format!("{count} questões importadas e salvas. A validação continua em segundo plano."),
                             false,
                         )
                     } else {
@@ -695,11 +720,72 @@ impl App {
             });
     }
     fn open_category_dialog(&mut self, editor: bool) {
+        self.category_edit = None;
         self.category_for_editor = editor;
         self.category_parent.clear();
         self.category_name.clear();
         self.category_error = None;
         self.category_dialog = true;
+    }
+    fn edit_category_dialog(&mut self) {
+        let path = self.category.clone();
+        self.open_category_dialog(false);
+        let (parent, name) = path.rsplit_once('/').unwrap_or(("", &path));
+        self.category_name = name.into();
+        self.category_parent = parent.into();
+        self.category_edit = Some(path);
+    }
+    fn selection_toolbar(&mut self, ui: &mut egui::Ui, filtered: &[usize]) {
+        self.checked
+            .retain(|id| self.index.positions.contains_key(id));
+        ui.horizontal_wrapped(|ui| {
+            if ui
+                .small_button("Selecionar resultados")
+                .on_hover_text("Seleciona todas as questões da busca, incluindo as outras páginas")
+                .clicked()
+            {
+                self.checked
+                    .extend(filtered.iter().map(|&i| self.bank.questions[i].id));
+            }
+            if ui.small_button("Limpar seleção").clicked() {
+                self.checked.clear();
+            }
+            small(ui, format!("{} selecionadas no banco", self.checked.len()));
+        });
+        if !self.checked.is_empty() {
+            ui.horizontal_wrapped(|ui| {
+                if ui.button("Exportar seleção").clicked() {
+                    if let Some(path) = rfd::FileDialog::new()
+                        .add_filter("Banco JSON", &["json"])
+                        .set_file_name("questoes_selecionadas.json")
+                        .save_file()
+                    {
+                        match save_bank(&path, &selected_bank(&self.bank, &self.checked)) {
+                            Ok(()) => self.notify("Seleção exportada em JSON.", false),
+                            Err(e) => self.notify(e, true),
+                        }
+                    }
+                }
+                for (label, copy) in [("Copiar", true), ("Mover", false)] {
+                    if ui.button(label).clicked() {
+                        self.transfer_destination.clear();
+                        self.transfer = Some(copy);
+                    }
+                }
+                if ui.button("Apagar").clicked() {
+                    self.batch_delete = Some(self.checked.clone());
+                }
+                if ui.small_button("Copiar JSON").clicked() {
+                    match serde_json::to_string_pretty(&selected_bank(&self.bank, &self.checked)) {
+                        Ok(json) => {
+                            ui.ctx().copy_text(json);
+                            self.notify("Seleção copiada para a área de transferência.", false);
+                        }
+                        Err(e) => self.notify(e.to_string(), true),
+                    }
+                }
+            });
+        }
     }
     fn bank_page(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
@@ -717,7 +803,7 @@ impl App {
             });
         });
         ui.add_space(22.);
-        let cats = categories(&self.bank);
+        let cats = self.index.categories.clone();
         ui.columns(3, |cols| {
             for (i, (n, label, sub)) in [
                 (
@@ -767,21 +853,42 @@ impl App {
                 ui.add_space(8.);
                 small(ui,"Categoria / assunto");
                 category_dropdown(ui,"bank_category",&mut self.category,&cats,true);
-                if ui.small_button("+ Nova categoria").clicked(){self.open_category_dialog(false);}
+                ui.horizontal_wrapped(|ui| {
+                    if ui.small_button("+ Nova categoria").clicked(){self.open_category_dialog(false);}
+                    if ui.add_enabled(self.category != "Todas", egui::Button::new("Editar categoria").small()).clicked(){self.edit_category_dialog();}
+                    if self.category != "Todas" && ui.small_button("Mostrar todas").clicked(){self.category="Todas".into();self.search.clear();}
+                });
                 ui.add_space(8.);
-                let search=self.search.to_lowercase();
-                let filtered:Vec<_>=self.bank.questions.iter().filter(|q|(self.category=="Todas"||category_matches(&q.category,&self.category))&&format!("{} {} {}",q.title,q.category,q.text).to_lowercase().contains(&search)).cloned().collect();
+                let (filtered, filter_changed) = self.index.filter(&self.bank, &self.category, &self.search);
+                if filter_changed { self.list_page = 0; }
                 ui.horizontal(|ui|{small(ui,format!("{} questões encontradas",filtered.len()));});
+                self.selection_toolbar(ui, &filtered);
+                let pages = filtered.len().div_ceil(bank_view::PAGE_SIZE).max(1);
+                self.list_page = self.list_page.min(pages - 1);
+                if pages > 1 {
+                    ui.horizontal(|ui| {
+                        if ui.add_enabled(self.list_page > 0, egui::Button::new("Anterior")).clicked() { self.list_page -= 1; }
+                        small(ui, format!("Página {} de {}", self.list_page+1, pages));
+                        if ui.add_enabled(self.list_page+1 < pages, egui::Button::new("Próxima")).clicked() { self.list_page += 1; }
+                    });
+                }
+                if !self.pending_validation.is_empty() { small(ui, format!("Validando {} questões em segundo plano…",self.pending_validation.len())); }
                 ui.add_space(4.);
-                egui::ScrollArea::vertical().id_salt("banklist").max_height((content_height-142.).max(150.)).show(ui,|ui|{
+                egui::ScrollArea::vertical().id_salt(("banklist",self.list_page)).max_height(ui.available_height()).show(ui,|ui|{
                     if filtered.is_empty(){card().show(ui,|ui|{ui.label("Nenhuma questão encontrada.");small(ui,"Crie uma questão ou ajuste sua busca.");});}
-                    for q in filtered{
+                    for &position in filtered.iter().skip(self.list_page * bank_view::PAGE_SIZE).take(bank_view::PAGE_SIZE) {
+                        let q = &self.bank.questions[position];
                         let selected=self.selected==Some(q.id);
                         let error=self.bank_errors.get(&q.id).cloned();
                         let frame=egui::Frame::new().fill(if selected{C::from_rgb(246,252,249)}else{C::WHITE}).stroke(Stroke::new(if error.is_some(){2.}else if selected{1.5f32}else{1f32},if error.is_some(){ERROR}else if selected{C::from_rgb(93,159,137)}else{LINE})).corner_radius(9).inner_margin(16);
+                        let mut checkbox_rect = egui::Rect::NOTHING;
                         let response=frame.show(ui,|ui|{
                             ui.set_width((left-36.).max(100.));
                             ui.horizontal(|ui|{
+                                let mut checked = self.checked.contains(&q.id);
+                                let check = ui.checkbox(&mut checked, "").on_hover_text("Selecionar para ações em lote");
+                                checkbox_rect = check.rect;
+                                if check.changed() { if checked {self.checked.insert(q.id);} else {self.checked.remove(&q.id);} }
                                 egui::Frame::new().fill(if selected{PALE}else{BG}).corner_radius(7).inner_margin(8).show(ui,|ui|{ui.label(R::new("ƒx").size(18.).color(if selected{TEAL}else{MUTED}));});
                                 ui.vertical(|ui|{
                                     ui.label(R::new(if q.title.trim().is_empty(){"Sem título"}else{&q.title}).size(15.).strong());
@@ -791,7 +898,8 @@ impl App {
                                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center),|ui|{ui.label(R::new("›").size(23.).color(if selected{TEAL}else{MUTED}));});
                             });
                         }).response;
-                        if ui.interact(response.rect,response.id.with(q.id),egui::Sense::click()).clicked(){self.selected=Some(q.id);self.preview_seed=17;}
+                        let preview_rect = egui::Rect::from_min_max(egui::pos2(checkbox_rect.right()+4., response.rect.top()), response.rect.max);
+                        if ui.interact(preview_rect,response.id.with(q.id),egui::Sense::click()).clicked(){self.selected=Some(q.id);self.preview_seed=17;}
                         ui.add_space(5.);
                     }
                 });
@@ -800,7 +908,7 @@ impl App {
             ui.allocate_ui_with_layout(Vec2::new(right,content_height),egui::Layout::top_down(egui::Align::Min),|ui|{
                 ui.set_width(right);
                 egui::ScrollArea::vertical().id_salt("bank_preview").auto_shrink([false,false]).show(ui,|ui|{
-                if let Some(q)=self.bank.questions.iter().find(|q|Some(q.id)==self.selected).cloned(){
+                if let Some(q)=self.selected.and_then(|id|self.index.positions.get(&id)).map(|&i|self.bank.questions[i].clone()){
                     let error=self.bank_errors.get(&q.id).cloned();
                     card().stroke(Stroke::new(if error.is_some(){2f32}else{1f32},if error.is_some(){ERROR}else{LINE})).show(ui,|ui|{
                         ui.set_width(right-42.);
@@ -808,7 +916,7 @@ impl App {
                         if ui.small_button("Ampliar prévia").clicked(){self.expanded_preview=true;}
                         ui.add_space(12.);ui.label(R::new(&q.title).size(20.).strong());
                         small(ui,&q.category);rule(ui);
-                        if let Some(e)=&error{ui.colored_label(ERROR,"Com erro · Edite para corrigir");ui.label(e);ui.label(&q.text);}else if let Ok(p)=preview(&q,self.preview_seed){Self::show_instance(ui,&p,true);}
+                        if let Some(e)=&error{ui.colored_label(ERROR,"Com erro · Edite para corrigir");ui.label(e);ui.label(&q.text);}else if self.pending_validation.contains(&q.id){small(ui,"Validando questão…");ui.label(&q.text);}else if let Ok(p)=display_preview(&q,self.preview_seed){Self::show_instance(ui,&p,true);}
                         ui.add_space(12.);
                         if secondary(ui,"Sortear novos valores").clicked(){self.preview_seed+=1;}
                         rule(ui);
@@ -899,7 +1007,7 @@ impl App {
                         q.id = self.bank.questions.iter().map(|q| q.id).max().unwrap_or(0) + 1;
                         self.bank.questions.push(q.clone());
                     }
-                    if self.persist() {
+                    if self.persist(&old) {
                         self.selected = Some(q.id);
                         self.sync_plan();
                         self.dirty = false;
@@ -939,7 +1047,7 @@ impl App {
                         let before=self.draft.clone();
                         field(ui,"Título da questão",&mut self.draft.title);
                         small(ui,"Categoria / assunto");
-                        category_dropdown(ui,"editor_category",&mut self.draft.category,&categories(&self.bank),false);
+                        category_dropdown(ui,"editor_category",&mut self.draft.category,&self.index.categories,false);
                         if ui.small_button("+ Nova categoria").clicked(){self.open_category_dialog(true);}
                         ui.add_space(9.);
                         small(ui,"Enunciado · use {d} para inserir uma variável");
@@ -1164,8 +1272,8 @@ impl App {
         ui.add_space(22.);
         egui::ScrollArea::vertical().show(ui,|ui|{
             card().show(ui,|ui|{
-                ui.horizontal(|ui|{icon(ui,2,TEAL,28.);ui.vertical(|ui|{ui.label(R::new("Banco de questões").size(17.).strong());small(ui,format!("{} questões · formato JSON aberto e portátil",self.bank.questions.len()));});});
-                rule(ui);small(ui,"SALVO AUTOMATICAMENTE NESTE COMPUTADOR");ui.label(self.data.join("banco.json").display().to_string());
+                ui.horizontal(|ui|{icon(ui,2,TEAL,28.);ui.vertical(|ui|{ui.label(R::new("Banco de questões").size(17.).strong());small(ui,format!("{} questões · banco local · exportação JSON",self.bank.questions.len()));});});
+                rule(ui);small(ui,"SALVO AUTOMATICAMENTE NESTE COMPUTADOR");ui.label(self.data.join("banco.sqlite3").display().to_string());
                 ui.add_space(8.);if secondary(ui,"Abrir pasta de dados").clicked(){self.open_folder(self.data.clone())}
                 small(ui,"Use Exportar banco para guardar uma cópia ou levar suas questões para outro computador.");
                 small(ui,"Importação: JSON deste aplicativo ou XML Moodle (calculatedmulti e multichoice), com imagens PNG/JPG incorporadas. Referências a imagens externas são recusadas com aviso.");
@@ -1293,11 +1401,116 @@ impl App {
         });
     }
     fn dialogs(&mut self, ctx: &egui::Context) {
+        if let Some(copy) = self.transfer {
+            egui::Modal::new(egui::Id::new("transfer_questions")).show(ctx, |ui| {
+                ui.set_width(430.);
+                ui.heading(if copy {
+                    "Copiar questões"
+                } else {
+                    "Mover questões"
+                });
+                ui.label(format!(
+                    "{} questões selecionadas, incluindo seleções de outros filtros.",
+                    self.checked.len()
+                ));
+                small(ui, "Categoria de destino");
+                category_dropdown(
+                    ui,
+                    "transfer_destination",
+                    &mut self.transfer_destination,
+                    &self.index.categories,
+                    false,
+                );
+                if !copy {
+                    small(
+                        ui,
+                        "As questões sairão da categoria atual. As categorias serão preservadas.",
+                    );
+                }
+                ui.horizontal(|ui| {
+                    if ui
+                        .add_enabled(
+                            !self.transfer_destination.is_empty(),
+                            egui::Button::new(if copy {
+                                "Confirmar cópia"
+                            } else {
+                                "Confirmar mudança"
+                            }),
+                        )
+                        .clicked()
+                    {
+                        let old = self.bank.clone();
+                        match transfer_questions(
+                            &mut self.bank,
+                            &self.checked,
+                            &self.transfer_destination,
+                            copy,
+                        ) {
+                            Ok(count) => {
+                                if self.persist(&old) {
+                                    self.sync_plan();
+                                    self.category = "Todas".into();
+                                    self.search.clear();
+                                    self.checked.clear();
+                                    self.transfer = None;
+                                    self.notify(
+                                        format!(
+                                            "{count} questões {} e salvas.",
+                                            if copy { "copiadas" } else { "movidas" }
+                                        ),
+                                        false,
+                                    );
+                                } else {
+                                    self.bank = old;
+                                }
+                            }
+                            Err(e) => self.notify(e, true),
+                        }
+                    }
+                    if ui.button("Cancelar").clicked() {
+                        self.transfer = None;
+                    }
+                });
+                if self.status_error {
+                    ui.colored_label(ERROR, &self.status);
+                }
+            });
+        }
+        if let Some(ids) = self.batch_delete.clone() {
+            egui::Modal::new(egui::Id::new("delete_selection")).show(ctx, |ui| {
+                ui.set_width(420.);
+                ui.heading(format!("Apagar {} questões?", ids.len()));
+                ui.label("A seleção inclui questões marcadas em outros filtros. Esta ação remove as questões do banco local.");
+                small(ui, "As categorias e as provas já exportadas serão preservadas.");
+                egui::ScrollArea::vertical().max_height(160.).show(ui, |ui| {
+                    for q in self.bank.questions.iter().filter(|q| ids.contains(&q.id)) {
+                        ui.label(format!("{} · {}", q.title, q.category));
+                    }
+                });
+                ui.horizontal(|ui| {
+                    if ui.button("Cancelar").clicked() { self.batch_delete = None; }
+                    if primary(ui, "Apagar seleção").clicked() {
+                        let old = self.bank.clone();
+                        self.bank.category_labels = categories(&self.bank);
+                        self.bank.questions.retain(|q| !ids.contains(&q.id));
+                        if self.persist(&old) {
+                            self.checked.retain(|id| !ids.contains(id));
+                            if self.selected.is_some_and(|id| ids.contains(&id)) { self.selected = self.bank.questions.first().map(|q| q.id); }
+                            self.sync_plan();
+                            self.batch_delete = None;
+                            self.notify(format!("{} questões apagadas.", ids.len()), false);
+                        } else { self.bank = old; }
+                    }
+                });
+                if self.status_error { ui.colored_label(ERROR, &self.status); }
+            });
+        }
         if self.category_dialog {
             egui::Modal::new(egui::Id::new("new_category_dialog")).show(ctx, |ui| {
                 ui.set_width(390.);
-                ui.heading("Nova categoria");
+                ui.heading(if self.category_edit.is_some() {"Editar categoria"} else {"Nova categoria"});
                 small(ui, "Organize assuntos em categorias e subcategorias.");
+                if let Some(old) = &self.category_edit { ui.label(format!("Editando: {}. As questões e subcategorias acompanharão a alteração.", old.replace('/', " / "))); }
                 ui.add_space(12.);
                 field(ui, "Nome", &mut self.category_name);
                 small(ui, "Dentro de (opcional)");
@@ -1314,7 +1527,8 @@ impl App {
                             String::new(),
                             "Nenhuma · categoria principal",
                         );
-                        category_options(ui, &mut self.category_parent, &categories(&self.bank));
+                        let choices: Vec<_> = self.index.categories.clone().into_iter().filter(|c| self.category_edit.as_ref().is_none_or(|old| !category_matches(c, old))).collect();
+                        category_options(ui, &mut self.category_parent, &choices);
                     });
                 ui.add_space(8.);
                 if !self.category_name.trim().is_empty() {
@@ -1337,27 +1551,36 @@ impl App {
                 }
                 ui.add_space(12.);
                 ui.horizontal(|ui| {
-                    if primary(ui, "Criar categoria").clicked() {
-                        match new_category(
+                    if primary(ui, if self.category_edit.is_some() {"Salvar categoria"} else {"Criar categoria"}).clicked() {
+                        let old = self.bank.clone();
+                        let result = if let Some(source) = &self.category_edit {
+                            rename_category(&mut self.bank, source, &self.category_name, &self.category_parent)
+                        } else { new_category(
                             &self.category_name,
                             &self.category_parent,
-                            &categories(&self.bank),
-                        ) {
+                            &self.index.categories,
+                        ) };
+                        match result {
                             Err(e) => self.category_error = Some(e),
                             Ok(path) => {
-                                let old = self.bank.clone();
-                                self.bank.category_labels.push(path.clone());
-                                if self.persist() {
+                                if self.category_edit.is_none() { self.bank.category_labels.push(path.clone()); }
+                                if self.persist(&old) {
+                                    if let Some(source) = &self.category_edit {
+                                        self.draft.category = renamed_path(&self.draft.category, source, &path);
+                                        for (category, _) in &mut self.setup.plan { *category = renamed_path(category, source, &path); }
+                                    }
                                     self.sync_plan();
                                     if self.category_for_editor {
                                         self.draft.category = path;
                                         self.dirty = true;
                                         self.validation = None;
                                     } else {
-                                        self.category = path;
+                                        // Creating a category must not hide the rest of the bank.
+                                        self.category = "Todas".into();
+                                        self.search.clear();
                                     }
                                     self.category_dialog = false;
-                                    self.notify("Categoria criada e salva.", false);
+                                    self.notify(format!("Categoria {} e salva: {}. Todas as categorias continuam disponíveis.", if self.category_edit.is_some() {"atualizada"} else {"criada"}, self.category_name.trim()), false);
                                 } else {
                                     self.bank = old;
                                     self.category_error = Some(self.status.clone());
@@ -1457,7 +1680,7 @@ impl App {
                         if primary(ui, "Excluir questão").clicked() {
                             let old = self.bank.clone();
                             self.bank.questions.retain(|q| q.id != id);
-                            if self.persist() {
+                            if self.persist(&old) {
                                 self.selected = self.bank.questions.first().map(|q| q.id);
                                 self.sync_plan();
                                 self.notify("Questão excluída do banco.", false)
@@ -1501,6 +1724,16 @@ impl App {
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.frames += 1;
+        while let Ok(result) = self.validator.results.try_recv() {
+            if result.generation == self.validation_generation {
+                self.pending_validation.remove(&result.id);
+                if let Some(error) = result.error {
+                    self.bank_errors.insert(result.id, error);
+                } else {
+                    self.bank_errors.remove(&result.id);
+                }
+            }
+        }
         if self.screenshot.is_none() {
             self.updater.tick(ctx);
         }

@@ -1,5 +1,107 @@
 # Regras verificadas no original
 
+## Conferência mais recente: definições de datasets (10/11/2026)
+
+Aberto o principal original com `core_target_open`: `C:/dev/MoodTest/MoodTest.py`,
+83.212 bytes, SHA-256 `c2b9ff9719e5ca4b7c837a22da5eae6a3bd2811d9eb17ef6895a730c038f1541`.
+Deep mode ativo. Foram aguardadas, uma por vez, 3 buscas `native_strings_find`
+(nomes, configurações e mensagens), 6 consultas `native_name_xrefs_list` e
+23 chamadas `native_function_pseudocode` para importação, cálculo, renderização,
+sorteio, seleção e exportação. Todas recusaram o fonte Python com
+`not_supported: Unknown file magic`. Registro: [checks/deep-dataset-review.json](checks/deep-dataset-review.json).
+**Não houve decompilação nativa: este original não possui endereços de funções
+nativas disponíveis.** Os locais abaixo e nas tabelas anteriores são offsets
+reais no arquivo fonte; `native_address` permanece `null`.
+
+As referências foram seguidas diretamente nas definições Python. Em particular:
+`App.load_xmls → carregar_questoes → Dataset → Question.instantiate → Dataset.sample`.
+
+| Função / local no fonte | Regra observada e aplicada |
+|---|---|
+| `App.load_xmls`, chamada em `0x10abb` (linha 1808) | Delega a leitura de cada XML a `carregar_questoes`. |
+| `carregar_questoes`, `0xc549` (linha 1454); guarda em `0xcba2` (linha 1488) | Ignora definições de dataset sem nome ou com nome vazio. |
+| `carregar_questoes`, atribuição em `0xcfc0` (linha 1507) | Para definições com valores válidos, `datasets[nome_dataset] = Dataset(nome_dataset, valores)`: a última definição do mesmo nome substitui os valores anteriores, mantendo a posição de inserção inicial. Valores repetidos dentro do dataset permanecem repetidos. |
+| `Dataset.sample`, `0x832c` (linha 1001) | Escolhe uniformemente uma entrada: `P(valor) = contagem(valor) / quantidade_de_entradas`. Para `[7, 7, 9]`, `P(7) = 2/3` e `P(9) = 1/3`. |
+
+`src/model.rs::import_xml` agora aplica a guarda de nomes e substitui a variável
+existente em sua posição, em vez de acumular nomes duplicados. Antes da correção,
+o teste retornou `x=[1], y=[3], x=[7,7,9]`; o original retornou
+`x=[7,7,9], y=[3]`. Quatro casos foram calculados executando apenas as definições
+AST isoladas de carregamento, construtores e auxiliares, com adaptadores de texto
+sem imagens; a GUI e o módulo principal não foram importados.
+Os resultados estão em `mechanics.json::original.dataset_definition_cases` e
+[checks/source-dataset-definitions.json](checks/source-dataset-definitions.json).
+O teste `dataset_definitions_match_original` compara importação, persistência,
+reabertura, validação e geração da prévia.
+
+Evidências: chamada `ev_a7c2487f100afaebc197289f026313226514181b1702e6f100902200e47959df`;
+definição `ev_8b8482c387bbd68576a8c490f73ecd2a1f8666de9a99de49f4c949003a94562e`;
+guarda `ev_7d2e0b808cac8bf026498f5770cb9191a88547e2f5c3d8ed828debaa894a555e`;
+atribuição `ev_cbff9231c6ace6d1e9d0092a44dc79899b4fcc1f26952156ffee06da52594f67`.
+
+Datasets nomeados com valores inválidos/vazios continuam preservados para revisão,
+com problemas de importação, por decisão de produto já descrita abaixo. As melhorias
+solicitadas de categorias, seleção em lote e margens de 1,5 cm continuam sendo
+decisões de produto. As demais tabelas deste documento registram as regras numéricas,
+fórmulas A4, arredondamento, sorteio e gabaritos já conferidas no fonte.
+
+Verificação: `cargo test --locked` passou nos **28 testes**; `cargo fmt --check`
+e `git diff --check` passaram; `cargo build --release --locked` e o executável
+release com `--self-check` concluíram com sucesso. `rebuild_check` aprovou build,
+inicialização/captura (2070 × 1350) e 18 valores de mecânica (15 com fonte e
+3 decisões novas). Na primeira tentativa, um executável debug antigo estava
+bloqueado por uma instância sem janela; ele foi renomeado dentro de `target/debug`
+para permitir nova compilação, preservando o processo. A segunda verificação
+passou. Executável atualizado: `target/release/test-craft.exe`.
+
+## Conferência mais recente: nomes de arquivos (09/11/2026)
+
+O principal original foi aberto novamente com `core_target_open`:
+`C:/dev/MoodTest/MoodTest.py`, SHA-256
+`c2b9ff9719e5ca4b7c837a22da5eae6a3bd2811d9eb17ef6895a730c038f1541`.
+Deep mode está ativo. Foram aguardados sequencialmente os resultados de
+3 buscas `native_strings_find` para nomes, configurações e mensagens,
+5 consultas `native_name_xrefs_list` e 22 chamadas individuais
+`native_function_pseudocode`, cobrindo as funções de cálculo, renderização,
+sorteio, importação e exportação listadas abaixo. Todos retornaram
+`not_supported: Unknown file magic`. Registro completo:
+[checks/deep-source-review.json](checks/deep-source-review.json).
+
+**O alvo é fonte Python, sem endereços nativos ou pseudocódigo nativo recuperado.**
+Os offsets a seguir identificam bytes reais do fonte, não endereços de memória.
+As definições e chamadas legíveis permitem recuperar as regras diretamente.
+
+| Função / offset no fonte | Regra recuperada e uso no build |
+|---|---|
+| `App._sanitizar_nome`, linha 2091, `0x1340f` | Primeiro `strip()`; depois `re.sub(r'[\\/:*?"<>\|]+', '_', nome)`; depois `re.sub(r'\s+', '_', nome)`; resultado vazio vira `aluno`. `src/pdf.rs::safe` agora segue essa ordem, preserva acentos, apóstrofos, pontos e parênteses. |
+| `App.gerar_provas`, chamada em `0x13be2` | Usa o nome normalizado para o PDF individual. A reconstrução usa a mesma normalização nos PDFs de prova e gabarito individuais. |
+
+Resultados calculados pela definição original isolada, sem importar a GUI:
+`"  Ana   Maria  " → "Ana_Maria"`, `"Ana/\\:*?\"<>\|Silva" → "Ana_Silva"`,
+`"João d'Ávila Jr." → "João_d'Ávila_Jr."`, `"Ana / Silva" → "Ana___Silva"`,
+nome vazio ou só espaços → `aluno`. Nove casos estão em
+`mechanics.json::original.filename_cases` e no registro
+[checks/source-filename-reference.json](checks/source-filename-reference.json).
+O teste `student_filenames_match_original` falhou antes da correção:
+`"__Ana___Maria__"` em vez de `"Ana_Maria"`.
+
+Diferenças mantidas como decisões de produto: limite de 90 caracteres no nome,
+prefixo numérico para evitar colisões entre alunos e pasta `provas_<timestamp>`.
+Essas decisões não vêm do original. Evidências da definição e da chamada:
+`ev_158c27dbe8de1fb849350d28371d217a2cd672e372ff4b82dbca7a10fa02e30a` e
+`ev_9d8fc7a0919f0a9475432a5a9eda9a40d9f99ebe3c25ad790e765b99423889e0`.
+As tabelas seguintes preservam os valores, fórmulas, regras e offsets das demais
+funções recuperadas, incluindo duas casas com ROUND_HALF_UP, sorteio independente,
+remapeamento das respostas, seleção sem reposição, A4/2 cm e blocos de 15 respostas.
+
+Verificação desta conferência: **24 testes passaram** em `cargo test --locked`;
+formatação e `git diff --check` passaram. `cargo build --release --locked` e
+`target/release/test-craft.exe --self-check` concluíram com sucesso.
+`rebuild_check` aprovou compilação, inicialização/captura (2070 × 1350) e
+mecânicas: 17 valores, 14 com fonte e 3 decisões novas. Registro:
+[checks/deep-source-verification.json](checks/deep-source-verification.json).
+Executável atualizado: `target/release/test-craft.exe`.
+
 ## Melhorias de interface solicitadas (09/11/2026)
 
 Mudanças novas de usabilidade: o banco dedica 48% da largura útil à prévia e
@@ -318,3 +420,37 @@ com o binário compilado; os dois checksums SHA-256 foram conferidos. Resultado
 em `checks/review-self-check.log`. `rebuild_check` passou em build, inicialização
 e captura (2070 × 1350) e mecânicas: 15 valores, 12 com fonte e 3 decisões novas.
 A validação ICE/instalação real do MSI continua com a limitação indicada acima.
+
+## Categorias, seleção em lote e PDF compacto (10/11/2026)
+
+Mudanças de produto solicitadas pela pessoa usuária, posteriores à reconstrução
+original descrita acima:
+
+- Criar categoria mantém o banco em Todas e limpa a busca, evitando ocultar as
+  questões anteriores. Rótulos de categorias vazias continuam salvos no JSON.
+- Editar categoria renomeia ou altera o pai de toda a subárvore, acompanhando as
+  questões e o plano de geração. Rejeita ciclos, conflitos e caminhos longos
+  antes de alterar o banco.
+- Seleção por identificadores, independente da prévia e dos filtros, permite
+  exportar JSON importável, copiar JSON, copiar questões com novos IDs, mover
+  para outra categoria e apagar com confirmação. Falhas de gravação restauram
+  o banco em memória; mover e apagar preservam as categorias vazias.
+- PDF A4 com margens de 1,5 cm (42,51968503937008 pt), entrelinha de 1,22 e
+  corpo de 10,5 pt nas questões. Esta decisão substitui intencionalmente as
+  margens originais de 2 cm. Tabelas de respostas mantêm blocos de 15.
+- Título e nome do aluno quebram em linhas; rodapé numera cada prova individual.
+  Altura de texto e imagens decide a quebra para manter questões com alternativas
+  juntas quando couberem em uma página. Questões maiores fluem em várias páginas.
+
+Regressões: criação consecutiva de categorias com reabertura; renomeação de
+subárvore, ciclos e conflitos; cópia/movimentação/exportação de seleção; PDF
+com 20 questões curtas (3 páginas), cabeçalhos extensos e conteúdo com imagens.
+# Banco indexado e operações de questões — 10/11/2026
+
+O armazenamento ativo passa a `data/banco.sqlite3` (schema `user_version=1`): metadados com revisão, categorias com referência à categoria principal e questões identificadas por chave primária, posição e categoria. IDs são textos decimais para preservar todo o intervalo `u64` dos bancos JSON. Índices cobrem categoria/posição e ordem da lista; o conteúdo completo de cada questão preserva alternativas, datasets, imagens, avisos e XML original.
+
+Cada operação usa uma transação SQLite com chaves estrangeiras, WAL e sincronização FULL. Apenas questões alteradas têm o conteúdo regravado; exclusões e posições são atualizadas separadamente. Uma revisão impede sobrescrita entre janelas; o tempo de espera por bloqueio é limitado a 150 ms. O JSON anterior é lido somente na primeira migração bem-sucedida e permanece intacto como backup. Arquivos ilegíveis impedem a abertura para gravação, sem substituir dados por exemplos. Importação/exportação JSON v1 permanece compatível; o limite atual permanece em 10.000 questões.
+
+A interface usa índices de identificação, categorias e texto normalizado, com resultados de busca em cache. A lista renderiza até 50 questões por página sem copiar os conteúdos e imagens dos resultados. Selecionar resultados abrange todas as páginas do filtro. A validação usa um trabalhador serial em segundo plano, reutiliza resultados de questões inalteradas e ignora resultados de revisões antigas. Questões pendentes mostram aviso antes da prévia; geração de provas mantém sua validação obrigatória.
+
+Os testes cobrem migração e reabertura, preservação de drafts/imagens/XML/IDs, falhas com rollback, cópia/movimentação/exclusão, conflitos entre janelas e edição de um registro em 10.000 sem regravar os demais.

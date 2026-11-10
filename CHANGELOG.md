@@ -1,3 +1,13 @@
+# Test Craft 0.4.0
+
+- Banco local em SQLite com índices, gravações incrementais e transações; migração automática do banco JSON, preservando o arquivo anterior e a importação/exportação em JSON.
+- Busca em cache, lista com 50 questões por página e validação em segundo plano para reduzir o trabalho repetido em bancos maiores.
+- Proteção contra sobrescrita de alterações feitas por outra janela do aplicativo.
+- Seleção de questões em lote para exportar, copiar, mover ou apagar, com confirmação de exclusão; edição de categorias e subcategorias.
+- PDFs com margens de 1,5 cm, espaçamento compacto, identificação do aluno e rodapé numerado; questões que cabem em uma página ficam junto das alternativas.
+- Compatibilidade com o original corrigida na importação de datasets repetidos e nos nomes de arquivos dos alunos.
+- Empacotamento Windows compila o SQLite e as demais dependências com a mesma configuração estática de bibliotecas do executável.
+
 # Test Craft 0.3.1
 
 - Prévias maiores no banco e no editor, com janela ampliada; menu recolhível com ícones e preferência salva.

@@ -4,7 +4,7 @@
 
 Interface e exemplos criados para esta reconstrução. Nenhum logo, foto ou texto institucional do programa original foi reutilizado.
 
-Bibliotecas Rust: eframe/egui (MIT/Apache-2.0), serde e serde_json (MIT/Apache-2.0), image (MIT/Apache-2.0), rfd (MIT), xml-rs (MIT) e flate2 (MIT/Apache-2.0). Fontes padrão fornecidas pelo egui; PDFs usam Helvetica padrão do leitor PDF.
+Bibliotecas Rust: eframe/egui (MIT/Apache-2.0), serde e serde_json (MIT/Apache-2.0), image (MIT/Apache-2.0), rfd (MIT), xml-rs (MIT), flate2 (MIT/Apache-2.0) e rusqlite (MIT), com SQLite incorporado (domínio público). Fontes padrão fornecidas pelo egui; PDFs usam Helvetica padrão do leitor PDF.
 
 Regras de funcionamento observadas no código Python fornecido e reimplementadas de forma independente; detalhes e localizações em MECHANICS.md.
 

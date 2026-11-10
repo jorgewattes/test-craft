@@ -30,9 +30,9 @@
     {
       "name": "page margin",
       "group": "pdf",
-      "value": 56.69291338582677,
+      "value": 42.51968503937008,
       "unit": "pt",
-      "source": "Python Exam.export_pdf L1120, source offset 0x95d0: 2 / 2.54 * 72"
+      "source": "User-requested compact PDF layout, 2026-11-10: 1.5 / 2.54 * 72; intentionally replaces original 2 cm margin"
     },
     {
       "name": "shuffle alternatives",
@@ -99,17 +99,29 @@
       "group": "pdf",
       "value": 15,
       "source": "Python add_blank_answer_tables L968, source offset 0x7e27; block constant 0x7f2f"
+    },
+    {
+      "name": "student filename normalization",
+      "group": "export",
+      "value": "trim; collapse invalid Windows characters; then collapse whitespace; empty becomes aluno",
+      "source": "Python App._sanitizar_nome L2091, source offset 0x1340f; gerar_provas call L2136, offset 0x13be2"
+    },
+    {
+      "name": "duplicate dataset definitions",
+      "group": "import",
+      "value": "ignore unnamed definitions; last valid values per name replace earlier ones in first insertion order; keep repeated entries",
+      "source": "Python carregar_questoes L1454, source offset 0xc549; unnamed guard L1488 at 0xcba2; assignment L1507 at 0xcfc0"
     }
   ],
   "analysis": {
-    "checked_on": "2026-11-09",
+    "checked_on": "2026-11-10",
     "mode": "deep",
-    "native_pseudocode_functions_awaited": 22,
+    "native_pseudocode_functions_awaited": 23,
     "native_result": "not_supported: Unknown file magic (Python source)",
-    "attempt_log": "checks/native-tables-review.json",
+    "attempt_log": "checks/deep-dataset-review.json",
     "fallback": "direct source review with AST call references and byte offsets",
     "native_strings_queries_awaited": 3,
-    "native_reference_queries_awaited": 5
+    "native_reference_queries_awaited": 6
   },
   "original": {
     "path": "C:\\dev\\MoodTest\\MoodTest.py",
@@ -2194,6 +2206,110 @@
             "",
             ""
           ]
+        ]
+      }
+    ],
+    "filename_cases": [
+      {
+        "name": "  Ana   Maria  ",
+        "expected": "Ana_Maria"
+      },
+      {
+        "name": "Ana/\\:*?\"<>|Silva",
+        "expected": "Ana_Silva"
+      },
+      {
+        "name": "João d'Ávila Jr.",
+        "expected": "João_d'Ávila_Jr."
+      },
+      {
+        "name": "",
+        "expected": "aluno"
+      },
+      {
+        "name": " \t\n ",
+        "expected": "aluno"
+      },
+      {
+        "name": "Ana / Silva",
+        "expected": "Ana___Silva"
+      },
+      {
+        "name": "Dr. José (Turma A)",
+        "expected": "Dr._José_(Turma_A)"
+      },
+      {
+        "name": "A__B",
+        "expected": "A__B"
+      },
+      {
+        "name": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "expected": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      }
+    ],
+    "dataset_definition_cases": [
+      {
+        "label": "duplicate names replace earlier values, preserving order and weights",
+        "xml": "<quiz><question type=\"calculatedmulti\"><name><text>Dataset rules</text></name><questiontext><text>Valor {x}</text></questiontext><answer fraction=\"100\"><text>{x}</text></answer><answer fraction=\"0\"><text>Outra</text></answer><dataset_definitions><dataset_definition><name><text>x</text></name><dataset_items><dataset_item><value>1</value></dataset_item></dataset_items></dataset_definition><dataset_definition><name><text>y</text></name><dataset_items><dataset_item><value>3</value></dataset_item></dataset_items></dataset_definition><dataset_definition><name><text>x</text></name><dataset_items><dataset_item><value>7</value></dataset_item><dataset_item><value>7</value></dataset_item><dataset_item><value>9</value></dataset_item></dataset_items></dataset_definition></dataset_definitions></question></quiz>",
+        "expected": [
+          {
+            "name": "x",
+            "values": [
+              7.0,
+              7.0,
+              9.0
+            ]
+          },
+          {
+            "name": "y",
+            "values": [
+              3.0
+            ]
+          }
+        ]
+      },
+      {
+        "label": "missing dataset name is ignored",
+        "xml": "<quiz><question type=\"calculatedmulti\"><name><text>Dataset rules</text></name><questiontext><text>Valor {x}</text></questiontext><answer fraction=\"100\"><text>{x}</text></answer><answer fraction=\"0\"><text>Outra</text></answer><dataset_definitions><dataset_definition><dataset_items><dataset_item><value>99</value></dataset_item></dataset_items></dataset_definition><dataset_definition><name><text>x</text></name><dataset_items><dataset_item><value>2</value></dataset_item></dataset_items></dataset_definition></dataset_definitions></question></quiz>",
+        "expected": [
+          {
+            "name": "x",
+            "values": [
+              2.0
+            ]
+          }
+        ]
+      },
+      {
+        "label": "empty dataset name is ignored",
+        "xml": "<quiz><question type=\"calculatedmulti\"><name><text>Dataset rules</text></name><questiontext><text>Valor {x}</text></questiontext><answer fraction=\"100\"><text>{x}</text></answer><answer fraction=\"0\"><text>Outra</text></answer><dataset_definitions><dataset_definition><name><text></text></name><dataset_items><dataset_item><value>99</value></dataset_item></dataset_items></dataset_definition><dataset_definition><name><text>x</text></name><dataset_items><dataset_item><value>2</value></dataset_item></dataset_items></dataset_definition></dataset_definitions></question></quiz>",
+        "expected": [
+          {
+            "name": "x",
+            "values": [
+              2.0
+            ]
+          }
+        ]
+      },
+      {
+        "label": "distinct names remain independent",
+        "xml": "<quiz><question type=\"calculatedmulti\"><name><text>Dataset rules</text></name><questiontext><text>Valor {x}</text></questiontext><answer fraction=\"100\"><text>{x}</text></answer><answer fraction=\"0\"><text>Outra</text></answer><dataset_definitions><dataset_definition><name><text>x</text></name><dataset_items><dataset_item><value>1</value></dataset_item><dataset_item><value>2</value></dataset_item></dataset_items></dataset_definition><dataset_definition><name><text>y</text></name><dataset_items><dataset_item><value>3</value></dataset_item><dataset_item><value>4</value></dataset_item></dataset_items></dataset_definition></dataset_definitions></question></quiz>",
+        "expected": [
+          {
+            "name": "x",
+            "values": [
+              1.0,
+              2.0
+            ]
+          },
+          {
+            "name": "y",
+            "values": [
+              3.0,
+              4.0
+            ]
+          }
         ]
       }
     ]

@@ -16,13 +16,22 @@ $notes = [regex]::Match($changelog, '(?ms)^# Test Craft ' + [regex]::Escape($ver
 if (-not $notes.Success) { throw 'Faltam as notas desta versao no CHANGELOG.md.' }
 cargo test --locked
 if ($LASTEXITCODE -ne 0) { throw 'Os testes falharam.' }
-cargo rustc --release --locked -- -C target-feature=+crt-static
-if ($LASTEXITCODE -ne 0) { throw 'A compilacao falhou.' }
+# Apply the CRT setting to every target dependency, including bundled SQLite.
+# An explicit target keeps these flags away from host build scripts/proc macros.
+$releaseTarget = 'x86_64-pc-windows-msvc'
+$previousRustFlags = $env:RUSTFLAGS
+try {
+    $env:RUSTFLAGS = "$previousRustFlags -C target-feature=+crt-static".Trim()
+    cargo build --release --locked --target $releaseTarget
+    if ($LASTEXITCODE -ne 0) { throw 'A compilacao falhou.' }
+} finally {
+    $env:RUSTFLAGS = $previousRustFlags
+}
 $packageName = "test-craft-$version-windows-x64"
 $stage = Join-Path $PWD "dist/$packageName"
 New-Item -ItemType Directory -Force -Path $stage | Out-Null
 [IO.File]::WriteAllText((Join-Path $PWD 'dist/release-notes.md'), $notes.Groups[1].Value.Trim() + [Environment]::NewLine, (New-Object Text.UTF8Encoding $false))
-Copy-Item -LiteralPath target/release/test-craft.exe -Destination (Join-Path $stage 'test-craft.exe') -Force
+Copy-Item -LiteralPath "target/$releaseTarget/release/test-craft.exe" -Destination (Join-Path $stage 'test-craft.exe') -Force
 foreach ($file in @('README.md', 'LICENSE', 'CREDITS.md', 'release-config.json')) {
     Copy-Item -LiteralPath $file -Destination $stage -Force
 }

@@ -39,7 +39,7 @@ use std::{
 };
 
 pub const DECIMALS: usize = 2;
-#[derive(Clone, Serialize, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 pub struct Variable {
     pub name: String,
     pub min: f64,
@@ -65,19 +65,19 @@ impl Variable {
         }
     }
 }
-#[derive(Clone, Serialize, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 pub struct Picture {
     pub name: String,
     pub data: Vec<u8>,
 }
-#[derive(Clone, Serialize, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 pub struct Answer {
     pub text: String,
     pub correct: bool,
     #[serde(default)]
     pub pictures: Vec<Picture>,
 }
-#[derive(Clone, Serialize, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 pub struct Question {
     pub id: u64,
     pub title: String,
@@ -99,7 +99,7 @@ pub struct Bank {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub category_labels: Vec<String>,
 }
-#[derive(Clone, Serialize, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 pub struct Instance {
     pub title: String,
     pub text: String,
@@ -696,6 +696,100 @@ pub fn new_category(name: &str, parent: &str, existing: &[String]) -> Result<Str
     }
     Ok(path)
 }
+pub fn renamed_path(path: &str, old: &str, new: &str) -> String {
+    if category_matches(path, old) {
+        format!("{new}{}", &path[old.len()..])
+    } else {
+        path.to_owned()
+    }
+}
+pub fn rename_category(
+    bank: &mut Bank,
+    old: &str,
+    name: &str,
+    parent: &str,
+) -> Result<String, String> {
+    let existing = categories(bank);
+    if !existing.iter().any(|c| c == old) {
+        return Err("Selecione uma categoria existente.".into());
+    }
+    if category_matches(parent, old) {
+        return Err(
+            "Uma categoria não pode ficar dentro dela mesma ou de suas subcategorias.".into(),
+        );
+    }
+    let outside: Vec<_> = existing
+        .iter()
+        .filter(|c| !category_matches(c, old))
+        .cloned()
+        .collect();
+    let path = new_category(name, parent, &outside)?;
+    let labels: Vec<_> = existing
+        .iter()
+        .map(|c| renamed_path(c, old, &path))
+        .collect();
+    if labels.iter().any(|c| c.len() > 100) {
+        return Err("Uma subcategoria excederia o limite de 100 bytes.".into());
+    }
+    for q in &mut bank.questions {
+        q.category = renamed_path(&q.category, old, &path);
+    }
+    bank.category_labels = labels;
+    Ok(path)
+}
+pub fn selected_bank(bank: &Bank, ids: &BTreeSet<u64>) -> Bank {
+    let mut selection = Bank {
+        version: bank.version,
+        questions: bank
+            .questions
+            .iter()
+            .filter(|q| ids.contains(&q.id))
+            .cloned()
+            .collect(),
+        category_labels: vec![],
+    };
+    selection.category_labels = categories(&selection);
+    selection
+}
+pub fn transfer_questions(
+    bank: &mut Bank,
+    ids: &BTreeSet<u64>,
+    destination: &str,
+    copy: bool,
+) -> Result<usize, String> {
+    if !categories(bank).iter().any(|c| c == destination) {
+        return Err("Selecione a categoria de destino.".into());
+    }
+    let mut questions = selected_bank(bank, ids).questions;
+    if questions.is_empty() {
+        return Err("Selecione pelo menos uma questão.".into());
+    }
+    // Keep categories even when their last question is moved.
+    let labels = categories(bank);
+    let count = questions.len();
+    if copy {
+        if bank.questions.len() + count > 10000 {
+            return Err("A cópia excederia o limite de 10.000 questões.".into());
+        }
+        let mut next = bank.questions.iter().map(|q| q.id).max().unwrap_or(0);
+        next.checked_add(count as u64)
+            .ok_or("Não há identificadores disponíveis.")?;
+        for q in &mut questions {
+            next += 1;
+            q.id = next;
+            q.category = destination.to_owned();
+        }
+        bank.questions.extend(questions);
+    } else {
+        for q in &mut bank.questions {
+            if ids.contains(&q.id) {
+                q.category = destination.to_owned();
+            }
+        }
+    }
+    bank.category_labels = labels;
+    Ok(count)
+}
 pub fn generate(
     bank: &Bank,
     plan: &[(String, usize)],
@@ -1069,7 +1163,7 @@ pub fn import_xml(path: &Path) -> Result<Bank, String> {
             .child("questiontext")
             .map(|node| xml_pictures(node, &mut import_issues))
             .unwrap_or_default();
-        let mut variables = vec![];
+        let mut variables: Vec<Variable> = vec![];
         let mut defs = vec![];
         // MoodTest.py carregar_questoes, source offset 0xc549: only
         // calculatedmulti uses datasets; trim individual values before parsing.
@@ -1078,6 +1172,10 @@ pub fn import_xml(path: &Path) -> Result<Bank, String> {
         }
         for d in defs {
             let name = d.nested("name");
+            // carregar_questoes (0xc549), unnamed guard at source offset 0xcba2.
+            if name.is_empty() {
+                continue;
+            }
             let mut vals = vec![];
             d.find("value", &mut vals);
             let values: Vec<f64> = vals
@@ -1098,13 +1196,20 @@ pub fn import_xml(path: &Path) -> Result<Bank, String> {
                     "Dataset {name} sem valores. Defina um intervalo no editor."
                 ));
             }
-            variables.push(Variable {
+            let variable = Variable {
                 name,
                 min: values.iter().copied().reduce(f64::min).unwrap_or(0.),
                 max: values.iter().copied().reduce(f64::max).unwrap_or(0.),
                 decimals: 2,
                 values,
-            });
+            };
+            // Original dictionary assignment at 0xcfc0: later definitions replace
+            // earlier ones without changing the name's first insertion position.
+            if let Some(existing) = variables.iter_mut().find(|v| v.name == variable.name) {
+                *existing = variable;
+            } else {
+                variables.push(variable);
+            }
         }
         let answers = n
             .children
@@ -1155,6 +1260,87 @@ pub fn import_xml(path: &Path) -> Result<Bank, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn categories_and_batch_changes_survive_reopening() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("checks/category-actions");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("bank.json");
+        let mut bank = examples();
+        let count = bank.questions.len();
+        for name in ["Nova", "Outra", "Vazia"] {
+            let category = new_category(name, "", &categories(&bank)).unwrap();
+            bank.category_labels.push(category);
+            bank.category_labels = categories(&bank);
+            save_bank(&path, &bank).unwrap();
+            bank = read_bank(&path).unwrap();
+        }
+        assert_eq!(bank.questions.len(), count);
+        assert!(categories(&bank).contains(&"Nova".into()));
+        assert!(categories(&bank).contains(&"Outra".into()));
+        let ids = BTreeSet::from([bank.questions[0].id, bank.questions[1].id]);
+        let originals: Vec<_> = bank.questions.iter().take(2).cloned().collect();
+        assert_eq!(
+            transfer_questions(&mut bank, &ids, "Nova", true).unwrap(),
+            2
+        );
+        assert_eq!(bank.questions.len(), count + 2);
+        for (q, original) in bank.questions.iter().zip(&originals) {
+            assert_eq!(q.category, original.category);
+        }
+        assert_eq!(
+            bank.questions
+                .iter()
+                .map(|q| q.id)
+                .collect::<BTreeSet<_>>()
+                .len(),
+            count + 2
+        );
+        assert_eq!(
+            transfer_questions(&mut bank, &ids, "Outra", false).unwrap(),
+            2
+        );
+        let selection = selected_bank(&bank, &ids);
+        assert_eq!(selection.questions.len(), 2);
+        assert!(selection.questions.iter().all(|q| q.category == "Outra"));
+        save_bank(&path, &selection).unwrap();
+        assert_eq!(read_bank(&path).unwrap().questions.len(), 2);
+        // Removing selected questions must preserve other copies and categories.
+        bank.questions.retain(|q| !ids.contains(&q.id));
+        save_bank(&path, &bank).unwrap();
+        bank = read_bank(&path).unwrap();
+        assert_eq!(bank.questions.len(), count);
+        assert_eq!(
+            bank.questions
+                .iter()
+                .filter(|q| q.category == "Nova")
+                .count(),
+            2
+        );
+        assert!(categories(&bank).contains(&"Outra".into()));
+        assert!(categories(&bank).contains(&"Vazia".into()));
+    }
+    #[test]
+    fn category_edits_follow_descendants_and_reject_invalid_moves_atomically() {
+        let mut bank = examples();
+        bank.category_labels = vec![
+            "Física/Óptica/Lentes".into(),
+            "Destino".into(),
+            "Física aplicada".into(),
+        ];
+        bank.questions[0].category = "Física/Óptica/Lentes".into();
+        rename_category(&mut bank, "Física/Óptica", "Luz", "Destino").unwrap();
+        assert_eq!(bank.questions[0].category, "Destino/Luz/Lentes");
+        assert!(categories(&bank).contains(&"Física aplicada".into()));
+        let before = serde_json::to_vec(&bank).unwrap();
+        assert!(rename_category(&mut bank, "Destino", "Loop", "Destino/Luz").is_err());
+        assert!(rename_category(&mut bank, "Destino", "Física aplicada", "").is_err());
+        assert!(rename_category(&mut bank, "Destino", &"x".repeat(95), "").is_err());
+        let id = bank.questions[0].id;
+        assert!(transfer_questions(&mut bank, &BTreeSet::from([id]), "Ausente", false).is_err());
+        assert_eq!(serde_json::to_vec(&bank).unwrap(), before);
+        rename_category(&mut bank, "Destino", "Ciências", "").unwrap();
+        assert_eq!(bank.questions[0].category, "Ciências/Luz/Lentes");
+    }
     #[test]
     fn hierarchical_categories_survive_export_and_legacy_banks() {
         let mut bank: Bank = serde_json::from_str(r#"{"version":1,"questions":[]}"#).unwrap();
@@ -1323,6 +1509,40 @@ mod tests {
                     "{expression}"
                 );
             }
+        }
+    }
+    #[test]
+    fn dataset_definitions_match_original() {
+        let mechanics: serde_json::Value =
+            serde_json::from_str(include_str!("../mechanics.json")).unwrap();
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("checks/original-dataset-definitions-test");
+        std::fs::create_dir_all(&dir).unwrap();
+        for case in mechanics["original"]["dataset_definition_cases"]
+            .as_array()
+            .unwrap()
+        {
+            let path = dir.join("datasets.xml");
+            std::fs::write(&path, case["xml"].as_str().unwrap()).unwrap();
+            let bank = import_xml(&path).unwrap();
+            let json = dir.join("bank.json");
+            save_bank(&json, &bank).unwrap();
+            let reopened = read_bank(&json).unwrap();
+            let q = &reopened.questions[0];
+            let actual: Vec<_> = q
+                .variables
+                .iter()
+                .map(|v| serde_json::json!({"name": v.name, "values": v.values}))
+                .collect();
+            assert_eq!(
+                serde_json::json!(actual),
+                case["expected"],
+                "{}",
+                case["label"]
+            );
+            assert!(validate(q).is_ok(), "{}", case["label"]);
+            let generated = preview(q, 42).unwrap();
+            assert!(!generated.text.contains('{'), "{}", case["label"]);
         }
     }
     #[test]
