@@ -102,6 +102,8 @@ pub struct Bank {
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 pub struct Instance {
     pub title: String,
+    #[serde(default)]
+    pub category: String,
     pub text: String,
     pub values: BTreeMap<String, f64>,
     #[serde(default)]
@@ -124,6 +126,8 @@ pub struct Batch {
     pub teacher: String,
     pub date: String,
     pub class_name: String,
+    #[serde(default)]
+    pub logo: Option<Picture>,
     pub students: Vec<StudentExam>,
 }
 
@@ -278,8 +282,19 @@ impl<'a> Parser<'a> {
                 .ok_or(format!("Variável {{{name}}} não cadastrada."));
         }
         if self.peek().is_ascii_digit() || self.peek() == '.' {
+            if self.peek() == '0' {
+                let radix = match self.chars.get(self.pos + 1) {
+                    Some('x' | 'X') => Some(16),
+                    Some('o' | 'O') => Some(8),
+                    Some('b' | 'B') => Some(2),
+                    _ => None,
+                };
+                if let Some(radix) = radix {
+                    return self.radix_integer(radix);
+                }
+            }
             let start = self.pos;
-            while self.peek().is_ascii_digit() || self.peek() == '.' {
+            while self.peek().is_ascii_digit() || matches!(self.peek(), '.' | '_') {
                 self.pos += 1
             }
             if matches!(self.peek(), 'e' | 'E') {
@@ -287,15 +302,31 @@ impl<'a> Parser<'a> {
                 if matches!(self.peek(), '+' | '-') {
                     self.pos += 1
                 }
-                while self.peek().is_ascii_digit() {
+                while self.peek().is_ascii_digit() || self.peek() == '_' {
                     self.pos += 1
                 }
             }
-            return self.chars[start..self.pos]
-                .iter()
-                .collect::<String>()
-                .parse()
-                .map_err(|_| "Número inválido.".into());
+            let token = &self.chars[start..self.pos];
+            // MoodTest.py avaliar_expressao, ast.parse call at source 0x14a5:
+            // Python permits separators only between digits, including exponents.
+            if token.iter().enumerate().any(|(i, c)| {
+                *c == '_'
+                    && (i == 0
+                        || !token[i - 1].is_ascii_digit()
+                        || !token.get(i + 1).is_some_and(char::is_ascii_digit))
+            }) {
+                return Err("Separador numérico inválido: use _ entre dois dígitos.".into());
+            }
+            let number: String = token.iter().filter(|c| **c != '_').collect();
+            // A nonzero decimal integer cannot start with 0; floats such as
+            // 01.5 / 01e2 and all-zero integers such as 00 remain valid.
+            if !number.contains(['.', 'e', 'E'])
+                && number.starts_with('0')
+                && number.chars().any(|c| c != '0')
+            {
+                return Err("Remova o zero inicial do número inteiro.".into());
+            }
+            return number.parse().map_err(|_| "Número inválido.".into());
         }
         if self.peek().is_ascii_alphabetic() || self.peek() == '_' {
             let start = self.pos;
@@ -344,6 +375,34 @@ impl<'a> Parser<'a> {
             };
         }
         Err("Fórmula incompleta ou símbolo não permitido.".into())
+    }
+    fn radix_integer(&mut self, radix: u32) -> Result<f64, String> {
+        // MoodTest.py ast.parse at source 0x14a5 and integer return at 0xd00:
+        // 0x/0o/0b accept one separator after the prefix and between digits.
+        self.pos += 2;
+        self.eat('_');
+        let start = self.pos;
+        while self.peek().is_ascii_alphanumeric() || self.peek() == '_' {
+            self.pos += 1;
+        }
+        let token = &self.chars[start..self.pos];
+        if token.is_empty()
+            || token.iter().enumerate().any(|(i, c)| {
+                if *c == '_' {
+                    i == 0
+                        || token[i - 1].to_digit(radix).is_none()
+                        || !token.get(i + 1).is_some_and(|c| c.is_digit(radix))
+                } else {
+                    c.to_digit(radix).is_none()
+                }
+            })
+        {
+            return Err(format!("Número inteiro inválido na base {radix}."));
+        }
+        let digits: String = token.iter().filter(|c| **c != '_').collect();
+        u128::from_str_radix(&digits, radix)
+            .map(|value| value as f64)
+            .map_err(|_| "Número inteiro fora do limite numérico.".into())
     }
 }
 pub fn eval(expr: &str, vars: &BTreeMap<String, f64>) -> Result<f64, String> {
@@ -496,6 +555,7 @@ pub fn instance(
     }
     Ok(Instance {
         title: q.title.clone(),
+        category: q.category.clone(),
         text: render(&q.text, &values)?,
         values,
         pictures: q.pictures.clone(),
@@ -874,8 +934,64 @@ pub fn generate(
         teacher: teacher.into(),
         date: date.into(),
         class_name: class_name.into(),
+        logo: None,
         students,
     })
+}
+/// Stage the whole merge before mutating the user's bank. Category paths are never
+/// replaced by the currently selected filter, and colliding source IDs are remapped.
+pub fn merge_import(
+    bank: &mut Bank,
+    incoming: Bank,
+    errors: &BTreeSet<u64>,
+    include_errors: bool,
+) -> Result<usize, String> {
+    let questions: Vec<_> = incoming
+        .questions
+        .into_iter()
+        .filter(|q| include_errors || !errors.contains(&q.id))
+        .collect();
+    if bank.questions.len() + questions.len() > 10000 {
+        return Err("A importação excederia o limite de 10.000 questões.".into());
+    }
+    let mut next = bank.questions.iter().map(|q| q.id).max().unwrap_or(0);
+    let mut staged = Vec::with_capacity(questions.len());
+    for mut q in questions {
+        next = next
+            .checked_add(1)
+            .ok_or("Não há identificadores disponíveis para importar.")?;
+        q.id = next;
+        staged.push(q);
+    }
+    let count = staged.len();
+    bank.category_labels.extend(incoming.category_labels);
+    bank.questions.extend(staged);
+    bank.category_labels = categories(bank);
+    Ok(count)
+}
+pub fn remove_category(bank: &mut Bank, path: &str, destination: &str) -> Result<(), String> {
+    let labels = categories(bank);
+    if !labels.iter().any(|p| p == path) {
+        return Err("Selecione uma categoria existente.".into());
+    }
+    let occupied = bank
+        .questions
+        .iter()
+        .any(|q| category_matches(&q.category, path));
+    if occupied && (!labels.iter().any(|p| p == destination) || category_matches(destination, path))
+    {
+        return Err("Escolha um destino fora da categoria que será excluída.".into());
+    }
+    for q in &mut bank.questions {
+        if category_matches(&q.category, path) {
+            q.category = destination.into();
+        }
+    }
+    bank.category_labels = labels
+        .into_iter()
+        .filter(|p| !category_matches(p, path))
+        .collect();
+    Ok(())
 }
 pub fn save_bank(path: &Path, bank: &Bank) -> Result<(), String> {
     let data = serde_json::to_vec_pretty(bank).map_err(|e| e.to_string())?;
@@ -1143,16 +1259,24 @@ pub fn import_xml(path: &Path) -> Result<Bank, String> {
     let mut nodes = vec![];
     root.find("question", &mut nodes);
     let mut category = "Importadas".to_owned();
+    let mut category_labels = vec![];
     let mut questions = vec![];
     for n in nodes {
         let kind = n.attrs.get("type").map(String::as_str).unwrap_or("");
         if kind == "category" {
-            category = n
-                .nested("category")
-                .rsplit('/')
-                .next()
-                .unwrap_or("Importadas")
-                .to_owned();
+            let raw = n.nested("category");
+            // Moodle's scope is metadata; keep the complete hierarchy after it.
+            let path = raw
+                .strip_prefix("$course$/")
+                .or_else(|| raw.strip_prefix("$system$/"))
+                .unwrap_or(&raw)
+                .trim_matches('/');
+            category = if path.is_empty() {
+                "Importadas".into()
+            } else {
+                path.into()
+            };
+            category_labels.push(category.clone());
             continue;
         }
         let mut import_issues = vec![];
@@ -1252,7 +1376,7 @@ pub fn import_xml(path: &Path) -> Result<Bank, String> {
     }
     Ok(Bank {
         version: 1,
-        category_labels: vec![],
+        category_labels,
         questions,
     })
 }
@@ -1260,6 +1384,114 @@ pub fn import_xml(path: &Path) -> Result<Bank, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn deleting_category_preserves_questions_and_requires_external_destination() {
+        let mut bank = examples();
+        bank.questions.truncate(2);
+        bank.questions[0].category = "Origem/Sub".into();
+        bank.questions[1].category = "Destino".into();
+        bank.category_labels = vec!["Origem/Vazia".into()];
+        let before = serde_json::to_vec(&bank).unwrap();
+        assert!(remove_category(&mut bank, "Origem", "Origem/Sub").is_err());
+        assert!(remove_category(&mut bank, "Origem", "").is_err());
+        assert_eq!(serde_json::to_vec(&bank).unwrap(), before);
+        remove_category(&mut bank, "Origem", "Destino").unwrap();
+        assert_eq!(bank.questions.len(), 2);
+        assert!(bank.questions.iter().all(|q| q.category == "Destino"));
+        assert_eq!(categories(&bank), vec!["Destino"]);
+    }
+    #[test]
+    fn mixed_category_export_import_preserves_paths_and_remaps_ids() {
+        let mut bank = examples();
+        bank.questions.truncate(3);
+        bank.questions[0].category = "Ciências/Física".into();
+        bank.questions[1].category = "Ciências/Química".into();
+        bank.questions[2].category = "Revisão".into();
+        bank.questions[2].text.clear();
+        let ids = bank.questions.iter().map(|q| q.id).collect();
+        let selection = selected_bank(&bank, &ids);
+        let folder = Path::new(env!("CARGO_MANIFEST_DIR")).join("checks/mixed-category-import");
+        std::fs::create_dir_all(&folder).unwrap();
+        let path = folder.join("selection.json");
+        save_bank(&path, &selection).unwrap();
+        let incoming = read_bank(&path).unwrap();
+        let errors: BTreeSet<_> = incoming
+            .questions
+            .iter()
+            .filter(|q| validate(q).is_err())
+            .map(|q| q.id)
+            .collect();
+        assert_eq!(errors.len(), 1);
+        let previous = serde_json::to_vec(&bank).unwrap();
+        let mut valid = bank.clone();
+        assert_eq!(
+            merge_import(&mut valid, incoming.clone(), &errors, false).unwrap(),
+            2
+        );
+        assert_eq!(valid.questions[3].category, "Ciências/Física");
+        assert_eq!(valid.questions[4].category, "Ciências/Química");
+        assert_eq!(
+            valid
+                .questions
+                .iter()
+                .map(|q| q.id)
+                .collect::<BTreeSet<_>>()
+                .len(),
+            5
+        );
+        assert_eq!(serde_json::to_vec(&bank).unwrap(), previous);
+        assert_eq!(merge_import(&mut bank, incoming, &errors, true).unwrap(), 3);
+        assert!(validate(bank.questions.last().unwrap()).is_err());
+        let generated = generate(
+            &valid,
+            &[
+                ("Ciências/Física".into(), 1),
+                ("Ciências/Química".into(), 1),
+            ],
+            "Aluno",
+            17,
+            "Prova",
+            "",
+            "",
+            "",
+            "",
+        )
+        .unwrap();
+        assert_eq!(
+            generated.students[0]
+                .questions
+                .iter()
+                .map(|q| q.category.as_str())
+                .collect::<BTreeSet<_>>(),
+            BTreeSet::from(["Ciências/Física", "Ciências/Química"])
+        );
+    }
+    #[test]
+    fn moodle_category_markers_keep_full_hierarchy_and_distinct_siblings() {
+        let folder = Path::new(env!("CARGO_MANIFEST_DIR")).join("checks/mixed-category-import");
+        std::fs::create_dir_all(&folder).unwrap();
+        let path = folder.join("hierarchy.xml");
+        std::fs::write(&path,r#"<quiz>
+        <question type="category"><category><text>$course$/Ciências/Física/Revisão</text></category></question>
+        <question type="multichoice"><name><text>Física</text></name><questiontext><text>Escolha</text></questiontext><answer fraction="100"><text>Sim</text></answer><answer fraction="0"><text>Não</text></answer></question>
+        <question type="category"><category><text>$course$/Ciências/Química/Revisão</text></category></question>
+        <question type="multichoice"><name><text>Química</text></name><questiontext><text>Escolha</text></questiontext><answer fraction="100"><text>Sim</text></answer><answer fraction="0"><text>Não</text></answer></question>
+        <question type="category"><category><text>$course$/Vazia/Subcategoria</text></category></question>
+        </quiz>"#).unwrap();
+        let incoming = import_xml(&path).unwrap();
+        assert_eq!(incoming.questions[0].category, "Ciências/Física/Revisão");
+        assert_eq!(incoming.questions[1].category, "Ciências/Química/Revisão");
+        assert!(categories(&incoming).contains(&"Vazia/Subcategoria".into()));
+        assert!(incoming.questions.iter().all(|q| validate(q).is_ok()));
+    }
+    #[test]
+    fn import_identifier_exhaustion_is_atomic() {
+        let mut bank = examples();
+        bank.questions[0].id = u64::MAX;
+        let previous = serde_json::to_vec(&bank).unwrap();
+        assert!(merge_import(&mut bank, examples(), &BTreeSet::new(), true).is_err());
+        assert_eq!(serde_json::to_vec(&bank).unwrap(), previous);
+    }
     #[test]
     fn categories_and_batch_changes_survive_reopening() {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("checks/category-actions");
@@ -1455,6 +1687,65 @@ mod tests {
         assert!(eval("sqrt(-1)", &v).is_err());
         assert!(eval("system(1)", &v).is_err());
         assert!(eval("missing+1", &v).is_err());
+    }
+    #[test]
+    fn radix_literals_match_original() {
+        let mechanics: serde_json::Value =
+            serde_json::from_str(include_str!("../mechanics.json")).unwrap();
+        for case in mechanics["original"]["radix_literal_cases"]
+            .as_array()
+            .unwrap()
+        {
+            let expression = case["expression"].as_str().unwrap();
+            let result = eval(expression, &BTreeMap::new());
+            let rendered = render(&format!("{{={expression}}}"), &BTreeMap::new());
+            if case.get("error").is_some() {
+                assert!(result.is_err(), "original rejects {expression}: {result:?}");
+                assert!(
+                    rendered.is_err(),
+                    "invalid block {expression}: {rendered:?}"
+                );
+            } else {
+                let expected = case["result"].as_f64().unwrap();
+                assert_eq!(
+                    result.unwrap_or_else(|e| panic!("{expression}: {e}")),
+                    expected
+                );
+                assert_eq!(rendered.unwrap(), fmt(expected), "block {expression}");
+            }
+        }
+    }
+    #[test]
+    fn numeric_literal_syntax_matches_original() {
+        let mechanics: serde_json::Value =
+            serde_json::from_str(include_str!("../mechanics.json")).unwrap();
+        for case in mechanics["original"]["numeric_syntax_cases"]
+            .as_array()
+            .unwrap()
+        {
+            let expression = case["expression"].as_str().unwrap();
+            let result = eval(expression, &BTreeMap::new());
+            if case.get("error").is_some() {
+                assert!(
+                    result.is_err(),
+                    "original rejects {expression}; got {result:?}"
+                );
+            } else {
+                assert_eq!(
+                    result.unwrap_or_else(|e| panic!("original accepts {expression}: {e}")),
+                    case["value"].as_f64().unwrap(),
+                    "{expression}"
+                );
+                // The same parser is used by question and answer rendering.
+                assert_eq!(
+                    render(&format!("{{={expression}}}"), &BTreeMap::new()).unwrap(),
+                    fmt(case["value"].as_f64().unwrap())
+                );
+            }
+        }
+        // Separators in numbers must not change names containing underscores.
+        let vars = BTreeMap::from([("x_1".into(), 4.)]);
+        assert_eq!(eval("x_1+1_000", &vars).unwrap(), 1004.);
     }
     #[test]
     fn formatting_and_blocks() {

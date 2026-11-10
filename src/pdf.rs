@@ -149,7 +149,9 @@ struct PdfImage {
     data: Vec<u8>,
 }
 fn wrapped_lines(t: &str, size: f64, bold: bool) -> Vec<String> {
-    let max = WIDTH - 2. * MARGIN;
+    wrapped_lines_width(t, size, bold, WIDTH - 2. * MARGIN)
+}
+fn wrapped_lines_width(t: &str, size: f64, bold: bool, max: f64) -> Vec<String> {
     let mut lines = vec![];
     for para in t.split('\n') {
         let mut line = String::new();
@@ -299,32 +301,47 @@ impl Pdf {
         self.gap(8.);
     }
     pub fn picture(&mut self, pic: &Picture) {
+        let height = picture_height(pic);
+        self.ensure(height + 4.);
+        self.y -= self.image_at(pic, MARGIN, self.y, 350., 220.) + 12.;
+    }
+    fn image_at(&mut self, pic: &Picture, x: f64, top: f64, max_w: f64, max_h: f64) -> f64 {
         use std::io::Write;
         if let Ok(img) = image::load_from_memory(&pic.data) {
-            let rgb = img.thumbnail(1280, 1280).to_rgb8();
+            // Composite transparent logos on white rather than turning them black.
+            let mut rgba = img.thumbnail(1280, 1280).to_rgba8();
+            for pixel in rgba.pixels_mut() {
+                let alpha = pixel[3] as u32;
+                for channel in 0..3 {
+                    pixel[channel] =
+                        ((pixel[channel] as u32 * alpha + 255 * (255 - alpha)) / 255) as u8;
+                }
+                pixel[3] = 255;
+            }
+            let rgb = image::DynamicImage::ImageRgba8(rgba).to_rgb8();
             let (w, h) = rgb.dimensions();
-            let scale = (350. / w as f64).min(220. / h as f64).min(1.);
+            let scale = (max_w / w as f64).min(max_h / h as f64).min(1.);
             let dw = w as f64 * scale;
             let dh = h as f64 * scale;
-            self.ensure(dh + 16.);
             let id = self.pictures.len();
             let mut encoder =
                 flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
             if encoder.write_all(rgb.as_raw()).is_ok() {
                 if let Ok(data) = encoder.finish() {
                     self.page.push_str(&format!(
-                        "q {dw} 0 0 {dh} {MARGIN} {} cm /Im{id} Do Q\n",
-                        self.y - dh
+                        "q {dw} 0 0 {dh} {x} {} cm /Im{id} Do Q\n",
+                        top - dh
                     ));
-                    self.y -= dh + 12.;
                     self.pictures.push(PdfImage {
                         width: w,
                         height: h,
                         data,
                     });
+                    return dh;
                 }
             }
         }
+        0.
     }
     pub fn append(&mut self, mut other: Pdf) {
         if !self.page.is_empty() {
@@ -427,8 +444,37 @@ pub fn letters(q: &Instance) -> String {
 }
 fn exam(batch: &Batch, s: &StudentExam) -> Pdf {
     let mut p = Pdf::new(&batch.title, &s.name);
+    // Replace the generic first-page heading with a print-friendly exam header.
+    p.page.clear();
+    p.y = HEIGHT - MARGIN;
+    let top = p.y;
+    let logo_height = batch
+        .logo
+        .as_ref()
+        .map(|logo| p.image_at(logo, WIDTH - MARGIN - 80., top, 80., 65.))
+        .unwrap_or(0.);
+    let text_max = WIDTH - 2. * MARGIN - if batch.logo.is_some() { 100. } else { 0. };
+    p.page.push_str("0.10 0.20 0.19 rg\n");
+    for (text, size, bold) in [(&batch.institution, 10., false), (&batch.title, 18., true)] {
+        if !text.trim().is_empty() {
+            for line in wrapped_lines_width(text, size, bold, text_max) {
+                p.ensure(size * 1.22);
+                p.draw(&line, size, bold);
+            }
+            p.gap(6.);
+        }
+    }
+    p.y = p.y.min(top - logo_height - 8.);
+    p.page.push_str(&format!(
+        "0.22 0.44 0.38 RG 2 w {MARGIN} {} m {} {} l S 0 g\n",
+        p.y,
+        WIDTH - MARGIN,
+        p.y
+    ));
+    p.gap(14.);
+    p.line(&format!("Aluno(a): {}", s.name), 11., true);
+    p.gap(5.);
     for t in [
-        &batch.institution,
         &format!(
             "Professor(a): {}   |   Turma: {}",
             batch.teacher, batch.class_name
@@ -439,6 +485,11 @@ fn exam(batch: &Batch, s: &StudentExam) -> Pdf {
             p.line(t, 10., false)
         }
     }
+    p.page.push_str(&format!(
+        "0.35 g BT 1 0 0 1 {} 24 Tm {} ET 0 g\n",
+        WIDTH - MARGIN - text_width("Página 1", 8., false),
+        text_commands("Página 1", 8., false)
+    ));
     p.gap(5.);
     p.line(
         "Responda às questões abaixo. Assinale as alternativas corretas.",
@@ -467,7 +518,18 @@ fn exam(batch: &Batch, s: &StudentExam) -> Pdf {
                 })
                 .sum::<f64>()
             + q.pictures.iter().map(picture_height).sum::<f64>()
-            + 12.;
+            + 12.
+            + if q.category.is_empty() {
+                0.
+            } else {
+                wrapped_lines(
+                    &format!("Categoria: {}", q.category.replace('/', " / ")),
+                    8.,
+                    false,
+                )
+                .len() as f64
+                    * 9.76
+            };
         // Keep ordinary questions whole; oversized questions flow across pages.
         let fresh_capacity = HEIGHT - 2. * MARGIN - 70.;
         p.ensure(if height <= fresh_capacity {
@@ -475,6 +537,13 @@ fn exam(batch: &Batch, s: &StudentExam) -> Pdf {
         } else {
             45.
         });
+        if !q.category.is_empty() {
+            p.line(
+                &format!("Categoria: {}", q.category.replace('/', " / ")),
+                8.,
+                false,
+            );
+        }
         p.line(&title, 10.5, true);
         p.gap(3.);
         for pic in &q.pictures {
@@ -515,6 +584,13 @@ fn key(batch: &Batch, s: &StudentExam) -> Pdf {
     p.gap(16.);
     for (i, q) in s.questions.iter().enumerate() {
         p.ensure(65.);
+        if !q.category.is_empty() {
+            p.line(
+                &format!("Categoria: {}", q.category.replace('/', " / ")),
+                8.,
+                false,
+            );
+        }
         p.line(
             &format!("Questão {} - {}: {}", i + 1, q.title, letters(q)),
             11.,
@@ -582,7 +658,7 @@ pub fn export(batch: &Batch, base: &Path) -> Result<PathBuf, String> {
         let mut keys = Pdf::new("Gabarito consolidado", &batch.title);
         keys.line(&format!("Identificador: {}", batch.seed), 10., false);
         keys.gap(14.);
-        let mut csv = String::from("\u{feff}Aluno;Questão;Gabarito;Resposta correta\n");
+        let mut csv = String::from("\u{feff}Aluno;Questão;Gabarito;Resposta correta;Categoria\n");
         for (i, s) in batch.students.iter().enumerate() {
             let prefix = format!("{:03}_{}", i + 1, safe(&s.name));
             fs::write(
@@ -616,7 +692,7 @@ pub fn export(batch: &Batch, base: &Path) -> Result<PathBuf, String> {
             for (j, q) in s.questions.iter().enumerate() {
                 let quote = |s: &str| format!("\"{}\"", s.replace('"', "\"\""));
                 csv.push_str(&format!(
-                    "{};{};{};{}\n",
+                    "{};{};{};{};{}\n",
                     quote(&s.name),
                     j + 1,
                     letters(q),
@@ -627,7 +703,8 @@ pub fn export(batch: &Batch, base: &Path) -> Result<PathBuf, String> {
                             .map(|a| a.text.clone())
                             .collect::<Vec<_>>()
                             .join(" / ")
-                    )
+                    ),
+                    quote(&q.category)
                 ));
             }
         }
@@ -654,6 +731,60 @@ pub fn export(batch: &Batch, base: &Path) -> Result<PathBuf, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn exam_logo_categories_and_legacy_batches_roundtrip() {
+        let bank = examples();
+        let mut batch = generate(
+            &bank,
+            &[("Mecânica".into(), 1)],
+            "Aluno Exemplo\nOutra Aluna",
+            2026,
+            "Avaliação de Física",
+            "Colégio Exemplo",
+            "Maria Silva",
+            "10/11/2026",
+            "3º A",
+        )
+        .unwrap();
+        let folder = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("checks/header-design");
+        fs::create_dir_all(&folder).unwrap();
+        fs::write(
+            folder.join("without-logo.pdf"),
+            exam(&batch, &batch.students[0]).bytes(),
+        )
+        .unwrap();
+        let mut legacy = serde_json::to_value(&batch).unwrap();
+        legacy.as_object_mut().unwrap().remove("logo");
+        for student in legacy["students"].as_array_mut().unwrap() {
+            for question in student["questions"].as_array_mut().unwrap() {
+                question.as_object_mut().unwrap().remove("category");
+            }
+        }
+        let old: Batch = serde_json::from_value(legacy).unwrap();
+        assert!(old.logo.is_none());
+        assert!(old.students[0].questions[0].category.is_empty());
+        batch.logo = Some(Picture {
+            name: "Logo de exemplo".into(),
+            data: include_bytes!("../assets/test-craft.png").to_vec(),
+        });
+        let reopened: Batch = serde_json::from_slice(&serde_json::to_vec(&batch).unwrap()).unwrap();
+        assert_eq!(reopened.logo, batch.logo);
+        let pdf = exam(&reopened, &reopened.students[0]);
+        assert_eq!(pdf.pictures.len(), 1);
+        assert!(pdf.page.contains("Categoria:"));
+        fs::write(folder.join("with-logo.pdf"), pdf.bytes()).unwrap();
+        let output = export(&reopened, &folder).unwrap();
+        let csv = fs::read_to_string(output.join("gabaritos.csv")).unwrap();
+        assert!(csv.lines().next().unwrap().ends_with(";Categoria"));
+        assert!(csv.contains("Mecânica"));
+        batch.title = "Avaliação com um título longo de Física e Ciências da Natureza ".repeat(4);
+        batch.institution = "Instituição com nome extenso ".repeat(4);
+        fs::write(
+            folder.join("long-header-logo.pdf"),
+            exam(&batch, &batch.students[0]).bytes(),
+        )
+        .unwrap();
+    }
     #[test]
     fn compact_exams_keep_questions_together_and_wrap_long_headers() {
         let bank = examples();
@@ -788,6 +919,7 @@ mod tests {
             let indices: Vec<usize> = serde_json::from_value(case["indices"].clone()).unwrap();
             let q = Instance {
                 title: String::new(),
+                category: String::new(),
                 text: String::new(),
                 values: Default::default(),
                 pictures: vec![],

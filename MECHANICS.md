@@ -1,5 +1,120 @@
 # Regras verificadas no original
 
+## Conferência atual: bases inteiras (10/11/2026)
+
+Reaberto com `core_target_open` o programa principal original
+`C:/dev/MoodTest/MoodTest.py`, SHA-256
+`c2b9ff9719e5ca4b7c837a22da5eae6a3bd2811d9eb17ef6895a730c038f1541`.
+Deep mode está ativo. Nesta conferência, foram aguardados individualmente
+3 resultados de `native_strings_find` (nomes, configurações e mensagens),
+5 consultas de referências e 23 chamadas `native_function_pseudocode`,
+cobrindo cálculo, datasets, importação, seleção, renderização e PDFs.
+Todos retornaram `not_supported: Unknown file magic`:
+[registro integral](checks/deep-function-review.json).
+**O original é fonte Python. Não foi possível decompilá-lo com as ferramentas
+nativas; não há endereços de funções nativas. Os offsets abaixo são posições
+reais no arquivo fonte, e `native_address` permanece `null`.**
+
+As definições legíveis e suas chamadas foram mapeadas em
+[checks/source-radix-review.json](checks/source-radix-review.json), com 86
+funções/métodos, linhas, offsets, chamadas e trechos originais. Caminho seguido:
+`Question._processar_texto → _replace_calculated_blocks →
+avaliar_expressao_com_variaveis → avaliar_expressao → _preprocess_expr →
+ast.parse → _eval_ast`.
+
+| Função / posição no fonte | Regra recuperada |
+|---|---|
+| `avaliar_expressao`, linha 173, `0x13bd`; parse em `0x14a5` | A gramática aceita inteiros decimais, hexadecimais `0x`, octais `0o` e binários `0b`; prefixos e letras hexadecimais aceitam maiúsculas. |
+| `_eval_ast`, linha 125, `0xc7b`; retorno de constante em `0xd00` | A constante inteira já validada é retornada como número: `0x10+2 = 18`, `0b1010+0o17 = 25`, `0x1e2 = 482`. O `e` hexadecimal é um dígito, não expoente decimal. |
+| Mesma cadeia de parse | Permite um `_` imediatamente após o prefixo e separadores entre dígitos: `0x_FF = 255`, `0xCA_FE = 51966`. Recusa `0x`, `0b2`, `0o8`, `0x__FF`, `0xFF_` e `0x1.2`. |
+| `_preprocess_expr`, `0x128e`; `_eval_ast`, `0xc7b` | Mantém precedência e potência: `-0x10^2 = -256`, `(-0x10)^2 = 256`, `0x2^0b11 = 8`, `sqrt(0x100) = 16`. |
+
+Evidências dos bytes: definição
+`ev_33d90ea3470199769e702f1b6c8c80ba3bc2214981b8e1ae251dc2653a20c945`,
+parse `ev_45b2a81233720ce3c030925a68cec39f12f6974597477e3148a78e09d7819ff0`,
+retorno `ev_086a32a955726658ce3e7d4e4a2ff6a4e21966608f2fcec8d46baef7b6eb9066`.
+Os 24 casos de `mechanics.json::original.radix_literal_cases` foram calculados
+executando somente três funções e três tabelas numéricas isoladas via AST;
+o módulo principal, a GUI e as rotinas de instalação não foram executados.
+O script de reprodução está em `checks/review-original-radix.py`.
+
+`src/model.rs::Parser` passa a reconhecer as três bases nos cálculos usados
+pelo editor, validação, prévia e geração. `radix_literals_match_original`
+compara valores e blocos renderizados, incluindo as rejeições do original.
+Permanecem os limites próprios de complexidade e magnitude, a aritmética
+`f64` da reconstrução e a rejeição de literais acima de `u128`; isto não
+equivale à aritmética inteira de precisão arbitrária do Python.
+As tabelas posteriores preservam as demais fórmulas recuperadas: arredondamento
+decimal HALF_UP com duas casas, sorteio independente e sem reposição,
+remapeamento das corretas, A4 e blocos de 15 respostas. Margens de 1,5 cm e
+demais melhorias previamente solicitadas permanecem decisões de produto.
+
+Verificação desta conferência: o teste novo falhou antes da correção em
+`0x10+2` com `Símbolo inesperado: x`. Após a correção, **37 testes passaram**;
+`cargo fmt --check`, `git diff --check` e `cargo build --release --locked`
+passaram. `rebuild_check` aprovou compilação, abertura/captura (2070 × 1350)
+e 20 valores de mecânica (17 com fonte, 3 decisões novas). A captura foi
+inspecionada visualmente. Executável atualizado: `target/release/test-craft.exe`.
+Os resultados nas seções anteriores são registros históricos.
+
+## Conferência atual: sintaxe numérica (10/11/2026)
+
+O principal original foi aberto nesta execução com `core_target_open`:
+`C:/dev/MoodTest/MoodTest.py`, 83.212 bytes, SHA-256
+`c2b9ff9719e5ca4b7c837a22da5eae6a3bd2811d9eb17ef6895a730c038f1541`.
+A pasta original contém o fonte e `logo.png`, sem executável original compilado.
+Deep mode ativo. Foram aguardados sequencialmente 3 resultados de
+`native_strings_find` (nomes, configurações, mensagens), 5 de
+`native_name_xrefs_list` e 33 tentativas de `native_function_pseudocode`
+(incluindo dois nomes candidatos sem definição no fonte).
+Todos retornaram `not_supported: Unknown file magic`.
+Registro: [checks/deep-numeric-review.json](checks/deep-numeric-review.json).
+**Não houve decompilação nativa bem-sucedida. `native_address` é `null`;
+os locais documentados são offsets do arquivo fonte, não endereços nativos.**
+
+As definições e referências foram lidas diretamente no Python. O mapa desta
+execução contém 86 funções/métodos, com linha, offset e chamadas:
+[checks/source-numeric-syntax.json](checks/source-numeric-syntax.json).
+As tabelas nas seções seguintes preservam os valores e fórmulas já recuperados:
+duas casas e `Decimal(str(x)).quantize(10^-2, ROUND_HALF_UP)`, escolha independente
+por entrada de dataset, alternativas embaralhadas com remapeamento das corretas,
+seleção sem reposição, rótulos minúsculos e tabelas de respostas em blocos de 15.
+A4 usa `210/25,4*72 × 297/25,4*72` pontos. A margem original é `2/2,54*72` pontos;
+a margem atual de 1,5 cm continua sendo a melhoria solicitada anteriormente.
+
+| Função / localização no fonte | Regra recuperada e aplicada |
+|---|---|
+| `_preprocess_expr`, linha 160, `0x128e` | Substitui `^` por `**`, `ln(` por `log(` e remove espaços. |
+| `avaliar_expressao`, linha 173, `0x13bd`; `ast.parse` em `0x14a5` | Usa sintaxe numérica Python. `_` é permitido entre dois dígitos, inclusive na parte fracionária e no expoente: `1_000+2 = 1002`, `1_234.5_6 = 1234,56`, `1e1_0/1e8 = 100`. |
+| Mesma chamada em `0x14a5` | Inteiros decimais não nulos com zero inicial são inválidos: `01`, `0_1`. Inteiros compostos só de zeros (`00`, `0_0`) e floats com zero inicial (`01.5`, `01e2`) são válidos. |
+| `_eval_ast`, linha 125, `0xc7b`; chamada em `0x14d3` | Recebe as constantes numéricas já validadas pelo parser. Separadores antes/depois do ponto ou de `e`, repetidos ou finais são inválidos: `1__0`, `1_.0`, `1._0`, `1_e2`, `1e_2`, `1e2_`. |
+
+Referências seguidas: `Question._processar_texto → _replace_calculated_blocks →
+avaliar_expressao_com_variaveis → avaliar_expressao → _preprocess_expr →
+ast.parse → _eval_ast`. Evidências dos offsets:
+`ev_46de110c4dbefe3a7f50928f826faf08bf8fccef5df7b86a4b480eee479e369f`,
+`ev_4274b59bd7f6d78c14401fcae74625168c862dc98ecb5753fe232923ca98fcea`,
+`ev_db1955cf2c573cab1c52171c30c2399af39a8021a1c2f95d41f78e37af6839d1`.
+
+Foram executadas apenas seis definições/atribuições numéricas isoladas via AST,
+sem importar o módulo original, abrir GUI, instalar pacotes ou acessar a rede.
+Os 19 resultados estão em `mechanics.json::original.numeric_syntax_cases`.
+O teste `numeric_literal_syntax_matches_original` falhou antes da correção em
+`1_000+2` com `Símbolo inesperado: _`. `src/model.rs::Parser::atom` agora valida
+os separadores antes de removê-los e aplica a regra dos zeros iniciais; os mesmos
+casos verificam avaliação e renderização de blocos. Nomes como `x_1` continuam
+intactos. Os limites numéricos e de complexidade da reconstrução permanecem;
+não se afirma suporte integral a toda a gramática Python.
+
+As contagens de testes e builds nas seções anteriores são registros históricos.
+Nesta execução, **36 testes passaram**; `cargo fmt --check` e `git diff --check`
+passaram; `cargo build --release --locked` concluiu em 1 min 16 s. O executável
+release passou em `--self-check`. `rebuild_check` aprovou compilação,
+inicialização/captura (2070 × 1350) e **19 valores de mecânica** (16 com fonte,
+3 decisões novas). A captura foi inspecionada visualmente. Executável atualizado:
+`target/release/test-craft.exe`. Registro:
+[checks/deep-numeric-verification.json](checks/deep-numeric-verification.json).
+
 ## Conferência mais recente: definições de datasets (10/11/2026)
 
 Aberto o principal original com `core_target_open`: `C:/dev/MoodTest/MoodTest.py`,
@@ -454,3 +569,13 @@ Cada operação usa uma transação SQLite com chaves estrangeiras, WAL e sincro
 A interface usa índices de identificação, categorias e texto normalizado, com resultados de busca em cache. A lista renderiza até 50 questões por página sem copiar os conteúdos e imagens dos resultados. Selecionar resultados abrange todas as páginas do filtro. A validação usa um trabalhador serial em segundo plano, reutiliza resultados de questões inalteradas e ignora resultados de revisões antigas. Questões pendentes mostram aviso antes da prévia; geração de provas mantém sua validação obrigatória.
 
 Os testes cobrem migração e reabertura, preservação de drafts/imagens/XML/IDs, falhas com rollback, cópia/movimentação/exclusão, conflitos entre janelas e edição de um registro em 10.000 sem regravar os demais.
+
+# Categorias, importação e identidade visual - 10/11/2026
+
+Estas extensões atendem ao pedido de produto e não são inferências sobre o original. Um botão desenhado ao lado do dropdown abre a gestão de categorias: busca, contagens da subárvore em cache, criação, renomeação, mudança de categoria principal e exclusão com confirmação e transferência das questões para um destino externo. Linhas desenhadas e recuo substituem o caractere de subcategoria ausente na fonte.
+
+A importação prepara um banco separado e valida as questões em segundo plano. Antes de gravar, mostra totais, questões com erro e distribuição por categoria; o usuário pode cancelar ou confirmar, incluindo ou excluindo as questões com erro. A mesclagem preserva os caminhos e remapeia os IDs sem colisões. Marcadores de categoria Moodle agora preservam a hierarquia completa depois dos prefixos `$course$/` ou `$system$/`, em vez de reduzir ao último nome; categorias explícitas nas questões continuam preservadas. A seleção JSON mantém a categoria de cada questão.
+
+Instâncias sorteadas agora armazenam a categoria, também exibida nos PDFs e incluída no CSV. Lotes e preferências admitem logo PNG/JPEG opcional incorporado. No primeiro cabeçalho, o logo mantém proporção dentro de 80 por 65 pontos, com texto em coluna separada; transparência é composta sobre branco. Campos novos têm padrões na desserialização para compatibilidade com lotes e preferências existentes. Testes geram PDFs com logo, sem logo e com cabeçalho longo para revisão visual.
+
+O ícone original tem fonte SVG, PNG e ICO com sete tamanhos, gerados por `scripts/create-icon.py`. O PNG aparece na interface e na janela; `build.rs` incorpora o ICO como recurso Windows no executável, e o instalador o usa no menu Iniciar e em Programas Instalados.

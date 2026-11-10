@@ -7,3 +7,6 @@
 .env
 .env.*
 /.tools/
+*.pfx
+*.p12
+*.key

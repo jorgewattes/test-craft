@@ -13,13 +13,26 @@ pub const PAGE_SIZE: usize = 50;
 pub struct BankIndex {
     pub positions: BTreeMap<u64, usize>,
     pub categories: Vec<String>,
+    pub category_counts: BTreeMap<String, usize>,
     search: Vec<String>,
     filter: Option<(String, String)>,
     matches: Arc<Vec<usize>>,
 }
 impl BankIndex {
     pub fn new(bank: &Bank) -> Self {
+        let mut category_counts = BTreeMap::new();
+        for q in &bank.questions {
+            let mut path = q.category.as_str();
+            loop {
+                *category_counts.entry(path.to_owned()).or_default() += 1;
+                match path.rsplit_once('/') {
+                    Some((parent, _)) => path = parent,
+                    None => break,
+                }
+            }
+        }
         Self {
+            category_counts,
             positions: bank
                 .questions
                 .iter()

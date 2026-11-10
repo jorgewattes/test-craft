@@ -4,6 +4,8 @@
     <Package InstallerVersion="500" Compressed="yes" InstallScope="perUser" Platform="x64" Description="Banco de questões e provas individualizadas" />
     <MajorUpgrade DowngradeErrorMessage="Uma versão mais recente do Test Craft já está instalada." Schedule="afterInstallInitialize" />
     <MediaTemplate EmbedCab="yes" />
+    <Icon Id="TestCraftIcon" SourceFile="assets\test-craft.ico" />
+    <Property Id="ARPPRODUCTICON" Value="TestCraftIcon" />
     <Property Id="ARPURLINFOABOUT" Value="https://github.com/jorgewattes/test-craft" />
     <Directory Id="TARGETDIR" Name="SourceDir">
       <Directory Id="LocalAppDataFolder">
@@ -20,6 +22,7 @@
               <RemoveFolder Id="RemoveProgramsFolder" Directory="ProgramsFolder" On="uninstall" />
             </Component>
             <Component Id="Readme" Guid="D82C829E-B495-5CB4-927F-872E3DC55B88" Win64="yes"><File Source="$(var.Stage)\README.md" /><RegistryValue Root="HKCU" Key="Software\TestCraft" Name="Readme" Type="integer" Value="1" KeyPath="yes" /></Component>
+            <Component Id="SigningGuide" Guid="F92B1842-7162-43C9-ABF0-D9C2481ACF2C" Win64="yes"><File Source="$(var.Stage)\SIGNING.md" /><RegistryValue Root="HKCU" Key="Software\TestCraft" Name="SigningGuide" Type="integer" Value="1" KeyPath="yes" /></Component>
             <Component Id="License" Guid="C540ED29-57D1-5A36-8754-D801DF7AE5A5" Win64="yes"><File Source="$(var.Stage)\LICENSE" /><RegistryValue Root="HKCU" Key="Software\TestCraft" Name="License" Type="integer" Value="1" KeyPath="yes" /></Component>
             <Component Id="Credits" Guid="D9CE1F5E-E9AA-51D4-B12C-49391CF53C6B" Win64="yes"><File Source="$(var.Stage)\CREDITS.md" /><RegistryValue Root="HKCU" Key="Software\TestCraft" Name="Credits" Type="integer" Value="1" KeyPath="yes" /></Component>
           </Directory>
@@ -28,7 +31,7 @@
       <Directory Id="ProgramMenuFolder">
         <Directory Id="StartMenuFolder" Name="Test Craft">
           <Component Id="StartMenuShortcut" Guid="*" Win64="yes">
-            <Shortcut Id="LaunchTestCraft" Name="Test Craft" Target="[INSTALLFOLDER]test-craft.exe" WorkingDirectory="INSTALLFOLDER" />
+            <Shortcut Id="LaunchTestCraft" Name="Test Craft" Target="[INSTALLFOLDER]test-craft.exe" WorkingDirectory="INSTALLFOLDER" Icon="TestCraftIcon" IconIndex="0" />
             <RemoveFolder Id="RemoveStartMenu" On="uninstall" />
             <RegistryValue Root="HKCU" Key="Software\TestCraft" Name="Installed" Type="integer" Value="1" KeyPath="yes" />
           </Component>
@@ -38,6 +41,7 @@
     <Feature Id="MainFeature" Title="Test Craft" Level="1">
       <ComponentRef Id="AppExecutable" /><ComponentRef Id="InstalledMarker" />
       <ComponentRef Id="Readme" /><ComponentRef Id="License" /><ComponentRef Id="Credits" />
+      <ComponentRef Id="SigningGuide" />
       <ComponentRef Id="StartMenuShortcut" />
     </Feature>
     <WixVariable Id="WixUILicenseRtf" Value="installer\license.rtf" />

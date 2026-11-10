@@ -2,6 +2,18 @@
   "version": 1,
   "values": [
     {
+      "name": "import category hierarchy",
+      "group": "categories",
+      "value": "Preserve JSON question paths and full Moodle marker paths after course/system scope; preview counts and errors before commit",
+      "source": "User product requirement 2026-11-10; src/model.rs import_xml and merge_import; src/import_view.rs"
+    },
+    {
+      "name": "optional exam logo",
+      "group": "pdf",
+      "value": "PNG/JPEG logo embedded in preferences and batch; aspect ratio preserved in 80 by 65 pt header region; absent for legacy batches",
+      "source": "User product requirement 2026-11-10; src/main.rs Setup; src/pdf.rs exam"
+    },
+    {
       "name": "text decimal places",
       "group": "format",
       "value": 2,
@@ -111,17 +123,29 @@
       "group": "import",
       "value": "ignore unnamed definitions; last valid values per name replace earlier ones in first insertion order; keep repeated entries",
       "source": "Python carregar_questoes L1454, source offset 0xc549; unnamed guard L1488 at 0xcba2; assignment L1507 at 0xcfc0"
+    },
+    {
+      "name": "decimal numeric literal syntax",
+      "group": "calculation",
+      "value": "underscores only between digits; leading zeros forbidden in nonzero decimal integers, allowed in floats and all-zero integers",
+      "source": "Python _preprocess_expr L160 at 0x128e -> avaliar_expressao L173 at 0x13bd; ast.parse at 0x14a5 -> _eval_ast at 0x14d3; 19 isolated-source cases"
+    },
+    {
+      "name": "integer literal bases",
+      "group": "calculation",
+      "value": "decimal, hexadecimal 0x, octal 0o and binary 0b; Python separators",
+      "source": "Python avaliar_expressao L173, parse call at source offset 0x14a5; _eval_ast L125, integer constant return 0xd00"
     }
   ],
   "analysis": {
     "checked_on": "2026-11-10",
     "mode": "deep",
-    "native_pseudocode_functions_awaited": 23,
+    "native_pseudocode_functions_awaited": 33,
     "native_result": "not_supported: Unknown file magic (Python source)",
-    "attempt_log": "checks/deep-dataset-review.json",
+    "attempt_log": "checks/deep-numeric-review.json",
     "fallback": "direct source review with AST call references and byte offsets",
     "native_strings_queries_awaited": 3,
-    "native_reference_queries_awaited": 6
+    "native_reference_queries_awaited": 5
   },
   "original": {
     "path": "C:\\dev\\MoodTest\\MoodTest.py",
@@ -2311,6 +2335,182 @@
             ]
           }
         ]
+      }
+    ],
+    "numeric_syntax_cases": [
+      {
+        "expression": "1_000+2",
+        "value": 1002
+      },
+      {
+        "expression": "1_234.5_6",
+        "value": 1234.56
+      },
+      {
+        "expression": "1e1_0/1e8",
+        "value": 100.0
+      },
+      {
+        "expression": "0_0",
+        "value": 0
+      },
+      {
+        "expression": "00",
+        "value": 0
+      },
+      {
+        "expression": "01.5",
+        "value": 1.5
+      },
+      {
+        "expression": "01e2",
+        "value": 100.0
+      },
+      {
+        "expression": ".5_0",
+        "value": 0.5
+      },
+      {
+        "expression": "1_0^2",
+        "value": 100
+      },
+      {
+        "expression": "01",
+        "error": "SyntaxError"
+      },
+      {
+        "expression": "0_1",
+        "error": "SyntaxError"
+      },
+      {
+        "expression": "1__0",
+        "error": "SyntaxError"
+      },
+      {
+        "expression": "1_",
+        "error": "SyntaxError"
+      },
+      {
+        "expression": "1_.0",
+        "error": "SyntaxError"
+      },
+      {
+        "expression": "1._0",
+        "error": "SyntaxError"
+      },
+      {
+        "expression": "1_e2",
+        "error": "SyntaxError"
+      },
+      {
+        "expression": "1e_2",
+        "error": "SyntaxError"
+      },
+      {
+        "expression": "1e+_2",
+        "error": "SyntaxError"
+      },
+      {
+        "expression": "1e2_",
+        "error": "SyntaxError"
+      }
+    ],
+    "radix_literal_cases": [
+      {
+        "expression": "0x10+2",
+        "result": 18
+      },
+      {
+        "expression": "0XfF/3",
+        "result": 85.0
+      },
+      {
+        "expression": "0b1010+0o17",
+        "result": 25
+      },
+      {
+        "expression": "0B_1010",
+        "result": 10
+      },
+      {
+        "expression": "0o_17",
+        "result": 15
+      },
+      {
+        "expression": "0x_FF",
+        "result": 255
+      },
+      {
+        "expression": "0xCA_FE",
+        "result": 51966
+      },
+      {
+        "expression": "-0x10^2",
+        "result": -256
+      },
+      {
+        "expression": "(-0x10)^2",
+        "result": 256
+      },
+      {
+        "expression": "0x2^0b11",
+        "result": 8
+      },
+      {
+        "expression": "sqrt(0x100)",
+        "result": 16.0
+      },
+      {
+        "expression": "0x1e+2",
+        "result": 32
+      },
+      {
+        "expression": "0x1e2",
+        "result": 482
+      },
+      {
+        "expression": "0b0001",
+        "result": 1
+      },
+      {
+        "expression": "0x",
+        "error": "SyntaxError"
+      },
+      {
+        "expression": "0b2",
+        "error": "SyntaxError"
+      },
+      {
+        "expression": "0o8",
+        "error": "SyntaxError"
+      },
+      {
+        "expression": "0xG",
+        "error": "SyntaxError"
+      },
+      {
+        "expression": "0x__FF",
+        "error": "SyntaxError"
+      },
+      {
+        "expression": "0xF__F",
+        "error": "SyntaxError"
+      },
+      {
+        "expression": "0xFF_",
+        "error": "SyntaxError"
+      },
+      {
+        "expression": "0b_",
+        "error": "SyntaxError"
+      },
+      {
+        "expression": "0b10_2",
+        "error": "SyntaxError"
+      },
+      {
+        "expression": "0x1.2",
+        "error": "SyntaxError"
       }
     ]
   }

@@ -1,6 +1,17 @@
-param([string]$Repository = '', [switch]$SkipMsiValidation)
+param(
+    [string]$Repository = '',
+    [switch]$SkipMsiValidation,
+    [switch]$AllowUnsigned,
+    [string]$SigningCertificateThumbprint = $env:TEST_CRAFT_SIGNING_THUMBPRINT,
+    [ValidateSet('CurrentUser', 'LocalMachine')][string]$SigningCertificateStore = 'CurrentUser',
+    [string]$SignToolPath = $env:TEST_CRAFT_SIGNTOOL_PATH,
+    [string]$TimestampUrl = 'http://timestamp.digicert.com'
+)
 $ErrorActionPreference = 'Stop'
 Set-Location (Split-Path $PSScriptRoot -Parent)
+. (Join-Path $PSScriptRoot 'windows-signing.ps1')
+# Fail before building or overwriting packages when a release cannot be signed.
+$signing = New-WindowsSigningConfig -Thumbprint $SigningCertificateThumbprint -Store $SigningCertificateStore -SignToolPath $SignToolPath -TimestampUrl $TimestampUrl -AllowUnsigned:$AllowUnsigned
 if ($Repository) {
     if ($Repository -notmatch '^[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*$') { throw 'Use conta/repositorio.' }
     @{ repository = $Repository } | ConvertTo-Json | Set-Content -LiteralPath release-config.json -Encoding UTF8
@@ -32,11 +43,13 @@ $stage = Join-Path $PWD "dist/$packageName"
 New-Item -ItemType Directory -Force -Path $stage | Out-Null
 [IO.File]::WriteAllText((Join-Path $PWD 'dist/release-notes.md'), $notes.Groups[1].Value.Trim() + [Environment]::NewLine, (New-Object Text.UTF8Encoding $false))
 Copy-Item -LiteralPath "target/$releaseTarget/release/test-craft.exe" -Destination (Join-Path $stage 'test-craft.exe') -Force
-foreach ($file in @('README.md', 'LICENSE', 'CREDITS.md', 'release-config.json')) {
+# Sign the staged executable before it enters either the ZIP or the MSI.
+Invoke-WindowsSigning -Path (Join-Path $stage 'test-craft.exe') -Config $signing
+foreach ($file in @('README.md', 'SIGNING.md', 'LICENSE', 'CREDITS.md', 'release-config.json')) {
     Copy-Item -LiteralPath $file -Destination $stage -Force
 }
 $zip = Join-Path $PWD "dist/$packageName.zip"
-$files = @('test-craft.exe', 'README.md', 'LICENSE', 'CREDITS.md', 'release-config.json') | ForEach-Object { Join-Path $stage $_ }
+$files = @('test-craft.exe', 'README.md', 'SIGNING.md', 'LICENSE', 'CREDITS.md', 'release-config.json') | ForEach-Object { Join-Path $stage $_ }
 Compress-Archive -LiteralPath $files -DestinationPath $zip -Force
 $hash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
 [IO.File]::WriteAllText("$zip.sha256", "$hash  $packageName.zip" + [Environment]::NewLine, (New-Object Text.UTF8Encoding $false))
@@ -64,6 +77,20 @@ $validationArgs = @()
 if ($SkipMsiValidation) { $validationArgs = @('-sval'); Write-Warning 'ICE validation skipped: verify the MSI on Windows before publishing.' }
 & (Join-Path $wix 'light.exe') -nologo -ext (Join-Path $wix 'WixUIExtension.dll') -cultures:pt-BR @validationArgs -out $msi $object
 if ($LASTEXITCODE -ne 0) { throw 'Falha ao gerar o MSI.' }
+# The cabinet is embedded; sign the final MSI after linking and before hashing.
+Invoke-WindowsSigning -Path $msi -Config $signing
 $hash = (Get-FileHash -LiteralPath $msi -Algorithm SHA256).Hash.ToLowerInvariant()
 [IO.File]::WriteAllText("$msi.sha256", "$hash  $packageName.msi" + [Environment]::NewLine, (New-Object Text.UTF8Encoding $false))
-Write-Host "Release pronta: $msi e $zip"
+$signatureFiles = @((Join-Path $stage 'test-craft.exe'), $msi) | ForEach-Object {
+    $signature = Get-AuthenticodeSignature -LiteralPath $_
+    [ordered]@{
+        file = [IO.Path]::GetFileName($_); status = [string]$signature.Status
+        publisher = $signature.SignerCertificate.Subject
+        thumbprint = $signature.SignerCertificate.Thumbprint
+        timestamped = [bool]$signature.TimeStamperCertificate
+    }
+}
+$report = [ordered]@{ signed = [bool]$signing.Enabled; files = @($signatureFiles) } | ConvertTo-Json -Depth 4
+[IO.File]::WriteAllText((Join-Path $PWD 'dist/signing-status.json'), $report, (New-Object Text.UTF8Encoding $false))
+if ($signing.Enabled) { Write-Host "Release assinada e verificada: $msi e $zip" }
+else { Write-Warning "Pacotes locais SEM ASSINATURA: $msi e $zip. Nao resolvem o aviso de autor desconhecido." }

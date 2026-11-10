@@ -10,6 +10,30 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Check signing safeguards
+        shell: pwsh
+        run: ./scripts/test-windows-signing.ps1
+      - name: Load code signing certificate
+        shell: pwsh
+        env:
+          SIGNING_PFX_BASE64: ${{ secrets.TEST_CRAFT_SIGNING_PFX_BASE64 }}
+          SIGNING_PFX_PASSWORD: ${{ secrets.TEST_CRAFT_SIGNING_PFX_PASSWORD }}
+        run: |
+          if (-not $env:SIGNING_PFX_BASE64 -or -not $env:SIGNING_PFX_PASSWORD) {
+            throw 'Configure os secrets TEST_CRAFT_SIGNING_PFX_BASE64 e TEST_CRAFT_SIGNING_PFX_PASSWORD com um certificado confiavel de assinatura de codigo. Releases sem assinatura estao bloqueadas.'
+          }
+          $pfxPath = Join-Path $env:RUNNER_TEMP ([Guid]::NewGuid().ToString() + '.pfx')
+          try {
+            [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($env:SIGNING_PFX_BASE64))
+            $password = ConvertTo-SecureString $env:SIGNING_PFX_PASSWORD -AsPlainText -Force
+            $certificates = @(Import-PfxCertificate -FilePath $pfxPath -CertStoreLocation Cert:\CurrentUser\My -Password $password)
+            "TEST_CRAFT_IMPORTED_CERTIFICATES=$($certificates.Thumbprint -join ',')" >> $env:GITHUB_ENV
+            $signers = @($certificates | Where-Object { $_.HasPrivateKey })
+            if ($signers.Count -ne 1) { throw 'O PFX precisa conter exatamente uma identidade com chave privada.' }
+            "TEST_CRAFT_SIGNING_THUMBPRINT=$($signers[0].Thumbprint)" >> $env:GITHUB_ENV
+          } finally {
+            if (Test-Path -LiteralPath $pfxPath) { Remove-Item -LiteralPath $pfxPath -Force }
+          }
       - name: Build, test and package
         shell: pwsh
         run: ./scripts/build-release.ps1 -Repository "$env:GITHUB_REPOSITORY"
@@ -31,6 +55,16 @@ jobs:
             dist/${{ steps.release.outputs.package }}.zip.sha256
             dist/${{ steps.release.outputs.package }}.msi.sha256
             dist/release-notes.md
+            dist/signing-status.json
+      - name: Remove imported certificates
+        if: always()
+        shell: pwsh
+        run: |
+          if ($env:TEST_CRAFT_IMPORTED_CERTIFICATES) {
+            foreach ($thumbprint in ($env:TEST_CRAFT_IMPORTED_CERTIFICATES -split ',')) {
+              Remove-Item -LiteralPath "Cert:\CurrentUser\My\$thumbprint" -DeleteKey -ErrorAction SilentlyContinue
+            }
+          }
       - name: Publish stable release
         if: github.ref_type == 'tag'
         shell: pwsh
