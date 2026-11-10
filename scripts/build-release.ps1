@@ -30,6 +30,7 @@ $notes = [regex]::Match($changelog, '(?ms)^# Test Craft ' + [regex]::Escape($ver
 if (-not $notes.Success) { throw 'Faltam as notas desta versao no CHANGELOG.md.' }
 cargo test --locked
 if ($LASTEXITCODE -ne 0) { throw 'Os testes falharam.' }
+& (Join-Path $PSScriptRoot 'test-updater.ps1')
 # Apply the CRT setting to every target dependency, including bundled SQLite.
 # An explicit target keeps these flags away from host build scripts/proc macros.
 $releaseTarget = 'x86_64-pc-windows-msvc'

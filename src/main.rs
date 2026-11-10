@@ -93,7 +93,7 @@ fn secondary(ui: &mut egui::Ui, s: &str) -> egui::Response {
             .fill(C::WHITE)
             .stroke(Stroke::new(1f32, LINE))
             .corner_radius(7)
-            .min_size(Vec2::new(92., 35.)),
+            .min_size(Vec2::new(92., 38.)),
     )
 }
 fn field(ui: &mut egui::Ui, label: &str, value: &mut String) {
@@ -133,6 +133,22 @@ fn category_dropdown(
     all: bool,
 ) {
     egui::ComboBox::from_id_salt(id)
+        .icon(|ui, rect, _visuals, _is_open| {
+            ui.painter().line_segment(
+                [
+                    rect.center() + Vec2::new(-4., -2.),
+                    rect.center() + Vec2::new(0., 2.),
+                ],
+                Stroke::new(1.5f32, TEAL),
+            );
+            ui.painter().line_segment(
+                [
+                    rect.center() + Vec2::new(0., 2.),
+                    rect.center() + Vec2::new(4., -2.),
+                ],
+                Stroke::new(1.5f32, TEAL),
+            );
+        })
         .selected_text(if selected.is_empty() {
             "Selecione uma categoria".into()
         } else {
@@ -148,7 +164,7 @@ fn category_dropdown(
         });
 }
 fn category_settings(ui: &mut egui::Ui) -> egui::Response {
-    let (r, response) = ui.allocate_exact_size(Vec2::splat(35.), egui::Sense::click());
+    let (r, response) = ui.allocate_exact_size(Vec2::splat(38.), egui::Sense::click());
     ui.painter()
         .rect_filled(r, 7., if response.hovered() { PALE } else { C::WHITE });
     ui.painter()
@@ -175,6 +191,8 @@ struct ImportReview {
     bank: Bank,
     errors: BTreeMap<u64, String>,
     source: String,
+    destinations: BTreeMap<String, String>,
+    overrides: BTreeMap<u64, String>,
 }
 fn display_preview(q: &Question, seed: u64) -> Result<Instance, String> {
     if q.variables.len() > 12
@@ -328,6 +346,8 @@ struct Setup {
     names: String,
     seed: u64,
     plan: Vec<(String, usize)>,
+    #[serde(default)]
+    same_questions: bool,
 }
 impl Default for Setup {
     fn default() -> Self {
@@ -341,6 +361,7 @@ impl Default for Setup {
             names: String::new(),
             seed: 2026,
             plan: vec![],
+            same_questions: false,
         }
     }
 }
@@ -382,11 +403,14 @@ struct App {
     screenshot_requested: bool,
     sidebar_collapsed: bool,
     category_dialog: bool,
+    category_checked: BTreeSet<String>,
+    category_bulk_destination: String,
+    category_bulk_delete: bool,
     category_search: String,
     category_delete: Option<String>,
     category_delete_destination: String,
     import_review: Option<ImportReview>,
-    import_loading: Option<std::sync::mpsc::Receiver<ImportReview>>,
+    import_loading: Option<std::sync::mpsc::Receiver<Result<ImportReview, String>>>,
     import_errors: bool,
     category_for_editor: bool,
     category_name: String,
@@ -415,7 +439,20 @@ impl App {
         style.visuals.selection.bg_fill = C::from_rgb(204, 228, 221);
         style.visuals.selection.stroke = Stroke::new(1f32, TEAL);
         style.spacing.item_spacing = Vec2::new(9., 9.);
-        style.spacing.button_padding = Vec2::new(12., 7.);
+        style.spacing.button_padding = Vec2::new(12., 8.);
+        style.spacing.interact_size.y = 36.;
+        style.spacing.combo_height = 300.;
+        for widget in [
+            &mut style.visuals.widgets.inactive,
+            &mut style.visuals.widgets.hovered,
+            &mut style.visuals.widgets.active,
+            &mut style.visuals.widgets.open,
+        ] {
+            widget.corner_radius = egui::CornerRadius::same(8);
+            widget.bg_stroke = Stroke::new(1f32, LINE);
+        }
+        style.visuals.widgets.hovered.bg_stroke = Stroke::new(1f32, TEAL);
+        style.visuals.widgets.active.bg_stroke = Stroke::new(1f32, TEAL);
         style
             .text_styles
             .insert(egui::TextStyle::Body, egui::FontId::proportional(14.));
@@ -494,6 +531,9 @@ impl App {
                 .and_then(|b| serde_json::from_slice(&b).ok())
                 .unwrap_or(false),
             category_dialog: false,
+            category_checked: BTreeSet::new(),
+            category_bulk_destination: String::new(),
+            category_bulk_delete: false,
             category_search: String::new(),
             category_delete: None,
             category_delete_destination: String::new(),
@@ -511,6 +551,11 @@ impl App {
             batch_delete: None,
             expanded_preview: false,
         };
+        if let Ok(message) = std::fs::read_to_string(app.data.join("update-result.txt")) {
+            app.status_error = message.starts_with("Falha");
+            app.status = message;
+            let _ = std::fs::remove_file(app.data.join("update-result.txt"));
+        }
         app.sync_plan();
         app.refresh_history();
         if page == 1 {
@@ -573,6 +618,7 @@ impl App {
         self.draft = examples().questions.remove(0);
         self.draft.id = now();
         self.draft.title.clear();
+        self.draft.status = QuestionStatus::Draft;
         self.draft.category = self
             .index
             .categories
@@ -593,51 +639,20 @@ impl App {
         self.page = 1;
     }
     fn import(&mut self) {
-        if let Some(path) = rfd::FileDialog::new()
+        if let Some(paths) = rfd::FileDialog::new()
             .add_filter("Banco de questões", &["json", "xml"])
-            .pick_file()
+            .pick_files()
         {
-            let result = if path
-                .extension()
-                .and_then(|s| s.to_str())
-                .is_some_and(|e| e.eq_ignore_ascii_case("xml"))
-            {
-                import_xml(&path)
-            } else {
-                read_bank(&path)
-            };
-            match result {
-                Err(e) => self.notify(format!("Importação cancelada: {e}"), true),
-                Ok(b) => {
-                    let count = b.questions.len();
-                    if self.bank.questions.len() + count > 10000 {
-                        self.notify("A importação excederia o limite de 10.000 questões.", true);
-                        return;
-                    }
-                    let source = path
-                        .file_name()
-                        .unwrap_or_default()
-                        .to_string_lossy()
-                        .into_owned();
-                    let (tx, rx) = std::sync::mpsc::channel();
-                    let ctx = self.context.clone();
-                    std::thread::spawn(move || {
-                        let errors = b
-                            .questions
-                            .iter()
-                            .filter_map(|q| validate(q).err().map(|e| (q.id, e)))
-                            .collect();
-                        let _ = tx.send(ImportReview {
-                            bank: b,
-                            errors,
-                            source,
-                        });
-                        ctx.request_repaint();
-                    });
-                    self.import_loading = Some(rx);
-                    self.import_errors = true;
-                }
-            }
+            let (tx, rx) = std::sync::mpsc::channel();
+            let ctx = self.context.clone();
+            let remaining = 10000usize.saturating_sub(self.bank.questions.len());
+            std::thread::spawn(move || {
+                let result = import_view::read_import(paths, remaining);
+                let _ = tx.send(result);
+                ctx.request_repaint();
+            });
+            self.import_loading = Some(rx);
+            self.import_errors = true;
         }
     }
     fn export_bank(&mut self) {
@@ -825,14 +840,14 @@ impl App {
             .retain(|id| self.index.positions.contains_key(id));
         ui.horizontal_wrapped(|ui| {
             if ui
-                .small_button("Selecionar resultados")
+                .button("Selecionar resultados")
                 .on_hover_text("Seleciona todas as questões da busca, incluindo as outras páginas")
                 .clicked()
             {
                 self.checked
                     .extend(filtered.iter().map(|&i| self.bank.questions[i].id));
             }
-            if ui.small_button("Limpar seleção").clicked() {
+            if ui.button("Limpar seleção").clicked() {
                 self.checked.clear();
             }
             small(ui, format!("{} selecionadas no banco", self.checked.len()));
@@ -860,7 +875,7 @@ impl App {
                 if ui.button("Apagar").clicked() {
                     self.batch_delete = Some(self.checked.clone());
                 }
-                if ui.small_button("Copiar JSON").clicked() {
+                if ui.button("Copiar JSON").clicked() {
                     match serde_json::to_string_pretty(&selected_bank(&self.bank, &self.checked)) {
                         Ok(json) => {
                             ui.ctx().copy_text(json);
@@ -894,7 +909,7 @@ impl App {
                 (
                     self.bank.questions.len().to_string(),
                     "Questões no banco",
-                    "Prontas para suas próximas provas",
+                    "Inclui rascunhos e questões em revisão",
                 ),
                 (
                     cats.len().to_string(),
@@ -938,7 +953,7 @@ impl App {
                 ui.add_space(8.);
                 small(ui,"Categoria / assunto");
                 ui.horizontal(|ui| {
-                    ui.allocate_ui_with_layout(Vec2::new((ui.available_width()-44.).max(100.),35.),egui::Layout::top_down(egui::Align::Min),|ui| {
+                    ui.allocate_ui_with_layout(Vec2::new((ui.available_width()-47.).max(100.),38.),egui::Layout::top_down(egui::Align::Min),|ui| {
                         category_dropdown(ui,"bank_category",&mut self.category,&cats,true);
                     });
                     if category_settings(ui).clicked(){self.open_category_dialog(false);}
@@ -978,6 +993,7 @@ impl App {
                                 ui.vertical(|ui|{
                                     ui.label(R::new(if q.title.trim().is_empty(){"Sem título"}else{&q.title}).size(15.).strong());
                                     if let Some(e)=&error{ui.colored_label(ERROR,"Com erro · Revisar").on_hover_text(e);}
+                                    small(ui,if q.status==QuestionStatus::Draft {"Rascunho"} else {"Pronta"});
                                     small(ui,format!("{}   ·   Calculada   ·   {} variáveis",q.category,q.variables.len()));
                                 });
                                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center),|ui|{ui.label(R::new("›").size(23.).color(if selected{TEAL}else{MUTED}));});
@@ -998,7 +1014,7 @@ impl App {
                     card().stroke(Stroke::new(if error.is_some(){2f32}else{1f32},if error.is_some(){ERROR}else{LINE})).show(ui,|ui|{
                         ui.set_width(right-42.);
                         ui.horizontal(|ui|{small(ui,"PRÉVIA DA QUESTÃO");ui.with_layout(egui::Layout::right_to_left(egui::Align::Center),|ui|tag(ui,"Exemplo",TEAL,PALE));});
-                        if ui.small_button("Ampliar prévia").clicked(){self.expanded_preview=true;}
+                        if ui.button("Ampliar prévia").clicked(){self.expanded_preview=true;}
                         ui.add_space(12.);ui.label(R::new(&q.title).size(20.).strong());
                         small(ui,&q.category);rule(ui);
                         if let Some(e)=&error{ui.colored_label(ERROR,"Com erro · Edite para corrigir");ui.label(e);ui.label(&q.text);}else if self.pending_validation.contains(&q.id){small(ui,"Validando questão…");ui.label(&q.text);}else if let Ok(p)=display_preview(&q,self.preview_seed){Self::show_instance(ui,&p,true);}
@@ -1128,15 +1144,21 @@ impl App {
                         ui.add_space(12.);
                     }
                     if let Some(xml)=&self.draft.source_xml{
-                        if ui.small_button("Copiar XML original da questão").clicked(){ui.ctx().copy_text(xml.clone());}
+                        if ui.button("Copiar XML original da questão").clicked(){ui.ctx().copy_text(xml.clone());}
                     }
                     card().show(ui,|ui|{
                         ui.label(R::new("1   Identificação e enunciado").size(16.).strong());ui.add_space(10.);
                         let before=self.draft.clone();
                         field(ui,"Título da questão",&mut self.draft.title);
+                        ui.horizontal(|ui| {
+                            small(ui,"Status da questão");
+                            ui.selectable_value(&mut self.draft.status,QuestionStatus::Draft,"Rascunho");
+                            ui.selectable_value(&mut self.draft.status,QuestionStatus::Ready,"Pronta");
+                        });
+                        small(ui,"Somente questões prontas e sem erros participam das provas.");
                         small(ui,"Categoria / assunto");
                         ui.horizontal(|ui| {
-                            ui.allocate_ui_with_layout(Vec2::new((ui.available_width()-44.).max(100.),35.),egui::Layout::top_down(egui::Align::Min),|ui| {
+                            ui.allocate_ui_with_layout(Vec2::new((ui.available_width()-47.).max(100.),38.),egui::Layout::top_down(egui::Align::Min),|ui| {
                                 category_dropdown(ui,"editor_category",&mut self.draft.category,&self.index.categories,false);
                             });
                             if category_settings(ui).clicked(){self.open_category_dialog(true);}
@@ -1145,10 +1167,10 @@ impl App {
                         small(ui,"Enunciado · use {d} para inserir uma variável");
                         ui.add(egui::TextEdit::multiline(&mut self.draft.text).background_color(C::from_rgb(246,248,250)).desired_width(f32::INFINITY).desired_rows(4).margin(Vec2::splat(10.)));
                         ui.horizontal(|ui|{
-                            if ui.small_button("+ Imagem no enunciado").clicked(){match pick_picture(){Ok(Some(p))=>{self.draft.pictures.push(p);self.dirty=true;self.validation=None;},Ok(None)=>{},Err(e)=>self.validation=Some(Err(e))}}
+                            if ui.button("+ Imagem no enunciado").clicked(){match pick_picture(){Ok(Some(p))=>{self.draft.pictures.push(p);self.dirty=true;self.validation=None;},Ok(None)=>{},Err(e)=>self.validation=Some(Err(e))}}
                             small(ui,format!("{} imagens · PNG / JPG",self.draft.pictures.len()));
                         });
-                        let mut remove=None;for (i,p) in self.draft.pictures.iter().enumerate(){ui.horizontal(|ui|{small(ui,&p.name);if ui.small_button("Remover").clicked(){remove=Some(i)}});}
+                        let mut remove=None;for (i,p) in self.draft.pictures.iter().enumerate(){ui.horizontal(|ui|{small(ui,&p.name);if ui.button("Remover").clicked(){remove=Some(i)}});}
                         if let Some(i)=remove{self.draft.pictures.remove(i);self.dirty=true;self.validation=None;}
                         if before.title!=self.draft.title||before.category!=self.draft.category||before.text!=self.draft.text{self.dirty=true;self.validation=None;}
                     });
@@ -1166,7 +1188,7 @@ impl App {
                                 changed|=ui.add(egui::DragValue::new(&mut v.decimals).range(0..=6)).changed();
                                 if ui.button("×").clicked(){remove=Some(i)}
                                 ui.end_row();
-                                if !v.values.is_empty(){small(ui,format!("{} valores importados",v.values.len()));if ui.small_button("Usar intervalo").clicked(){v.values.clear();changed=true;}ui.end_row();}
+                                if !v.values.is_empty(){small(ui,format!("{} valores importados",v.values.len()));if ui.button("Usar intervalo").clicked(){v.values.clear();changed=true;}ui.end_row();}
                                 if changed{self.dirty=true;self.validation=None;}
                             }
                         });
@@ -1181,13 +1203,13 @@ impl App {
                             ui.horizontal(|ui|{
                                 let mut changed=ui.checkbox(&mut a.correct,format!("{}.",answer_label(i))).on_hover_text("Alternativa correta").changed();
                                 changed|=ui.add_sized([ui.available_width()-80.,32.],egui::TextEdit::singleline(&mut a.text).background_color(C::from_rgb(246,248,250)).font(egui::TextStyle::Monospace)).changed();
-                                if ui.small_button("Img").on_hover_text("Adicionar imagem à alternativa").clicked(){match pick_picture(){Ok(Some(p))=>{a.pictures.push(p);changed=true;},Ok(None)=>{},Err(e)=>self.validation=Some(Err(e))}}
-                                if ui.small_button("×").clicked(){remove=Some(i)}
+                                if ui.button("Img").on_hover_text("Adicionar imagem à alternativa").clicked(){match pick_picture(){Ok(Some(p))=>{a.pictures.push(p);changed=true;},Ok(None)=>{},Err(e)=>self.validation=Some(Err(e))}}
+                                if ui.button("×").clicked(){remove=Some(i)}
                                 if changed{self.dirty=true;self.validation=None;}
                             });
                         }
                         for (i,a) in self.draft.answers.iter_mut().enumerate(){
-                            if !a.pictures.is_empty(){ui.horizontal(|ui|{small(ui,format!("Alternativa {}: {} imagem(ns)",answer_label(i),a.pictures.len()));if ui.small_button("Remover imagens").clicked(){a.pictures.clear();self.dirty=true;self.validation=None;}});}
+                            if !a.pictures.is_empty(){ui.horizontal(|ui|{small(ui,format!("Alternativa {}: {} imagem(ns)",answer_label(i),a.pictures.len()));if ui.button("Remover imagens").clicked(){a.pictures.clear();self.dirty=true;self.validation=None;}});}
                         }
                         if let Some(i)=remove{self.draft.answers.remove(i);self.dirty=true;self.validation=None;}
                         if self.draft.answers.len()<8&&ui.button("+ Adicionar alternativa").clicked(){self.draft.answers.push(Answer{text:String::new(),correct:false,pictures:vec![]});self.dirty=true;self.validation=None;}
@@ -1202,7 +1224,7 @@ impl App {
                     card().show(ui,|ui|{
                         ui.set_width(side-42.);
                         small(ui,"PRÉVIA AO VIVO");
-                        if ui.small_button("Ampliar prévia").clicked(){self.expanded_preview=true;}
+                        if ui.button("Ampliar prévia").clicked(){self.expanded_preview=true;}
                         ui.add_space(12.);
                         let safe= self.draft.variables.len()<=12 && self.draft.answers.len()<=8 && self.draft.variables.iter().all(|v|v.decimals<=6&&v.min.is_finite()&&v.max.is_finite()&&v.min<=v.max&&v.count()>0&&v.count()<usize::MAX/2);
                         if safe{match preview(&self.draft,self.preview_seed){Ok(p)=>Self::show_instance(ui,&p,true),Err(e)=>{ui.colored_label(C::from_rgb(173,89,50),e);}}}
@@ -1227,7 +1249,7 @@ impl App {
         });
     }
     fn build_batch(&mut self) -> bool {
-        match generate(
+        match generate_with_mode(
             &self.bank,
             &self.setup.plan,
             &self.setup.names,
@@ -1237,6 +1259,7 @@ impl App {
             &self.setup.teacher,
             &self.setup.date,
             &self.setup.class_name,
+            self.setup.same_questions,
         ) {
             Ok(mut b) => {
                 b.logo = self.setup.logo.clone();
@@ -1296,14 +1319,17 @@ impl App {
                     });ui.add_space(12.);
                     card().show(ui,|ui|{
                         ui.label(R::new("2   Questões por categoria").size(16.).strong());small(ui,"Sorteio sem repetir questões dentro de cada prova.");ui.add_space(8.);
+                        changed |= ui.checkbox(&mut self.setup.same_questions,"Manter as mesmas questões para todos os alunos").changed();
+                        small(ui,if self.setup.same_questions {"Mantém questões e alternativas na mesma ordem; sorteia os valores por aluno."} else {"Sorteia questões independentemente para cada aluno; pode haver coincidências."});
+                        small(ui,"Disponíveis: somente questões prontas e válidas. Rascunhos, erros e validações pendentes ficam fora.");
                         let len=self.setup.plan.len();let mut mv=None;
                         egui::Grid::new("category_plan").spacing([14.,10.]).show(ui,|ui|{
                             for s in ["Categoria","Disponíveis","Sortear","",""]{small(ui,s)}ui.end_row();
                             for (i,(cat,n)) in self.setup.plan.iter_mut().enumerate(){
-                                let count=self.bank.questions.iter().filter(|q|&q.category==cat).count();
-                                ui.label(cat.as_str());small(ui,count.to_string());changed|=ui.add(egui::DragValue::new(n).range(0..=count)).changed();
-                                if ui.add_enabled(i>0,egui::Button::new("Subir").small()).clicked(){mv=Some((i,i-1))}
-                                if ui.add_enabled(i+1<len,egui::Button::new("Descer").small()).clicked(){mv=Some((i,i+1))}
+                                let count=self.index.ready_counts.get(cat).copied().unwrap_or(0);
+                                ui.label(cat.as_str());small(ui,count.to_string());let limit=if self.pending_validation.is_empty(){count}else{count.max(*n)};changed|=ui.add_enabled(self.pending_validation.is_empty(),egui::DragValue::new(n).range(0..=limit)).changed();
+                                if ui.add_enabled(i>0,egui::Button::new("↑").min_size(Vec2::splat(30.))).clicked(){mv=Some((i,i-1))}
+                                if ui.add_enabled(i+1<len,egui::Button::new("↓").min_size(Vec2::splat(30.))).clicked(){mv=Some((i,i+1))}
                                 ui.end_row();
                             }
                         });
@@ -1423,6 +1449,7 @@ impl App {
             {
                 if !b.plan.is_empty() {
                     self.setup.plan = b.plan.clone();
+                    self.setup.same_questions = b.same_questions;
                 } else {
                     let mut counts = std::collections::BTreeMap::new();
                     for q in &b.students[0].questions {
@@ -1461,6 +1488,16 @@ impl App {
             Err(e) => self.notify(format!("Registro inválido: {e}"), true),
         }
     }
+    fn start_update(&mut self, ctx: &egui::Context) {
+        if self.dirty {
+            self.notify(
+                "Salve ou descarte as alterações da questão antes de atualizar.",
+                true,
+            );
+            return;
+        }
+        self.updater.install(ctx);
+    }
     fn updates_page(&mut self, ui: &mut egui::Ui) {
         ui.label(R::new("Sobre e atualizações").size(29.).strong());
         small(ui, "Novas versões, com seus arquivos sempre no computador.");
@@ -1476,7 +1513,7 @@ impl App {
                 small(ui, "O aplicativo consulta releases públicas do GitHub ao abrir e a cada 6 horas enquanto estiver em uso.");
                 let busy = self.updater.busy();
                 ui.add_enabled_ui(!busy, |ui| {
-                    field(ui, "Repositório ou link de releases", &mut self.updater.settings.repository);
+                    field(ui, "Repositório ou link de releases", &mut self.update_repository);
                     ui.checkbox(&mut self.update_automatic, "Verificar automaticamente");
                     if primary(ui, "Salvar preferências").clicked() {
                         if let Err(e) = self.updater.save(&self.data, &self.update_repository, self.update_automatic) { self.updater.message = e; }
@@ -1486,8 +1523,8 @@ impl App {
                 if ui.add_enabled(!busy, egui::Button::new("Verificar agora")).clicked() { self.updater.check(ui.ctx()); }
                 if busy { ui.spinner(); }
                 ui.label(&self.updater.message);
-                if let Some(release) = self.updater.available.clone() {
-                    if primary(ui, "Baixar atualização").clicked() { ui.ctx().open_url(egui::OpenUrl::new_tab(release.url)); }
+                if self.updater.available.is_some() {
+                    ui.add_enabled_ui(!busy, |ui| { if primary(ui, "Baixar e instalar").clicked() { self.start_update(ui.ctx()); } });
                 }
                 if let Ok(repo) = updater::repository(&self.updater.settings.repository) {
                     ui.horizontal(|ui| {
@@ -1496,7 +1533,7 @@ impl App {
                     });
                 }
                 rule(ui);
-                small(ui, "Ao atualizar: feche o Test Craft e execute o novo MSI. Seus dados são preservados. Na versão portátil, substitua o executável mantendo a pasta data.");
+                small(ui, "Baixe e instale por aqui. Após sua autorização no Windows, o aplicativo fecha para concluir a atualização. Na versão portátil, o executável é substituído e a pasta data é preservada.");
                 small(ui, "A consulta usa somente o nome do repositório e a versão do programa. Questões, alunos e provas ficam locais. Sem internet, continue trabalhando e tente a consulta depois.");
             });
             ui.add_space(18.);
@@ -1621,6 +1658,7 @@ impl App {
         if self.category_dialog {
             egui::Modal::new(egui::Id::new("new_category_dialog")).show(ctx, |ui| {
                 ui.set_width(670.);
+                egui::ScrollArea::vertical().id_salt("category_dialog_body").max_height((ctx.screen_rect().height()-100.).max(300.)).show(ui,|ui| {
                 ui.heading("Configurar categorias");
                 small(ui,format!("{} categorias · {} questões",self.index.categories.len(),self.bank.questions.len()));
                 ui.add_space(8.);
@@ -1630,6 +1668,8 @@ impl App {
                     for path in choices {
                         let count=self.index.category_counts.get(&path).copied().unwrap_or(0);
                         ui.horizontal(|ui| {
+                            let mut checked=self.category_checked.contains(&path);
+                            if ui.checkbox(&mut checked, "").changed() { if checked {self.category_checked.insert(path.clone());} else {self.category_checked.remove(&path);} }
                             if ui.selectable_label(self.category_edit.as_ref()==Some(&path),path.replace('/'," / ")).clicked(){self.edit_category_path(path.clone());}
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center),|ui|{small(ui,format!("{count} questões"));});
                         });
@@ -1651,6 +1691,7 @@ impl App {
                         }
                     }
                 });
+                self.category_bulk_controls(ui);
                 rule(ui);
                 ui.label(R::new(if self.category_edit.is_some(){"Editar nome ou categoria principal"}else{"Criar categoria"}).strong().color(TEAL));
                 small(ui, "Organize assuntos em categorias e subcategorias.");
@@ -1737,6 +1778,7 @@ impl App {
                         self.category_dialog = false;
                     }
                 });
+                });
             });
             if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
                 self.category_dialog = false;
@@ -1796,11 +1838,10 @@ impl App {
                     .show(ctx, |ui| {
                         ui.label(R::new(format!("Test Craft {} está disponível", release.version)).size(20.).strong().color(TEAL));
                         ui.label(format!("Versão instalada: {}", updater::VERSION));
-                        ui.label("Baixe a nova versão na página oficial de releases e feche o aplicativo antes de executar o MSI. Seus dados são preservados.");
+                        ui.label("O aplicativo baixa e verifica o pacote. Depois, o Windows solicita autorização quando necessária para instalar. Salve suas edições antes de continuar. Seus dados são preservados.");
                         ui.horizontal(|ui| {
-                            if primary(ui, "Baixar atualização").clicked() {
-                                ctx.open_url(egui::OpenUrl::new_tab(release.url.clone()));
-                                self.updater.offer = false;
+                            if primary(ui, "Baixar e instalar").clicked() {
+                                self.start_update(ctx);
                             }
                             if secondary(ui, "Mais tarde").clicked() { self.updater.offer = false; }
                         });
@@ -1856,6 +1897,14 @@ impl App {
                     });
                 });
         }
+        if self.updater.installing() {
+            egui::Modal::new(egui::Id::new("installing_update")).show(ctx, |ui| {
+                ui.set_width(420.);
+                ui.heading("Atualizando Test Craft");
+                ui.horizontal(|ui| { ui.spinner(); ui.label(&self.updater.message); });
+                small(ui,"Aguarde o download e confirme a autorização do Windows. O aplicativo fechará para instalar; depois, abra-o novamente.");
+            });
+        }
         if self.help {
             let mut open = true;
             egui::Window::new("Do banco à prova, em poucos passos").open(&mut open).resizable(false).default_width(440.).show(ctx,|ui|{
@@ -1876,11 +1925,24 @@ impl eframe::App for App {
                     self.bank_errors.insert(result.id, error);
                 } else {
                     self.bank_errors.remove(&result.id);
+                    if let Some(&position) = self.index.positions.get(&result.id) {
+                        let q = &self.bank.questions[position];
+                        if q.status == QuestionStatus::Ready {
+                            *self
+                                .index
+                                .ready_counts
+                                .entry(q.category.clone())
+                                .or_default() += 1;
+                        }
+                    }
                 }
             }
         }
         if self.screenshot.is_none() {
             self.updater.tick(ctx);
+            if self.updater.close_requested {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            }
         }
         if let Some(path) = &self.screenshot {
             for event in ctx.input(|i| i.events.clone()) {

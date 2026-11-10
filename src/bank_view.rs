@@ -14,6 +14,7 @@ pub struct BankIndex {
     pub positions: BTreeMap<u64, usize>,
     pub categories: Vec<String>,
     pub category_counts: BTreeMap<String, usize>,
+    pub ready_counts: BTreeMap<String, usize>,
     search: Vec<String>,
     filter: Option<(String, String)>,
     matches: Arc<Vec<usize>>,
@@ -33,6 +34,7 @@ impl BankIndex {
         }
         Self {
             category_counts,
+            ready_counts: BTreeMap::new(),
             positions: bank
                 .questions
                 .iter()

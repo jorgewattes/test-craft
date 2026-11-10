@@ -78,10 +78,22 @@ pub struct Answer {
     pub pictures: Vec<Picture>,
 }
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
+pub enum QuestionStatus {
+    Ready,
+    Draft,
+}
+impl Default for QuestionStatus {
+    fn default() -> Self {
+        Self::Ready
+    }
+}
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 pub struct Question {
     pub id: u64,
     pub title: String,
     pub category: String,
+    #[serde(default)]
+    pub status: QuestionStatus,
     pub text: String,
     #[serde(default)]
     pub pictures: Vec<Picture>,
@@ -119,6 +131,8 @@ pub struct StudentExam {
 pub struct Batch {
     pub version: u32,
     pub seed: u64,
+    #[serde(default)]
+    pub same_questions: bool,
     #[serde(default)]
     pub plan: Vec<(String, usize)>,
     pub title: String,
@@ -861,6 +875,34 @@ pub fn generate(
     date: &str,
     class_name: &str,
 ) -> Result<Batch, String> {
+    generate_with_mode(
+        bank,
+        plan,
+        names,
+        seed,
+        title,
+        institution,
+        teacher,
+        date,
+        class_name,
+        false,
+    )
+}
+pub fn eligible(q: &Question) -> bool {
+    q.status == QuestionStatus::Ready && validate(q).is_ok()
+}
+pub fn generate_with_mode(
+    bank: &Bank,
+    plan: &[(String, usize)],
+    names: &str,
+    seed: u64,
+    title: &str,
+    institution: &str,
+    teacher: &str,
+    date: &str,
+    class_name: &str,
+    same_questions: bool,
+) -> Result<Batch, String> {
     let names: Vec<_> = names
         .lines()
         .map(str::trim)
@@ -884,39 +926,52 @@ pub fn generate(
     if plan.iter().map(|p| p.1).sum::<usize>() > 100 {
         return Err("Use até 100 questões por prova.".into());
     }
+    let mut pools = BTreeMap::new();
+    let mut seen = BTreeSet::new();
     for (cat, n) in plan {
+        if !seen.insert(cat) {
+            return Err("Há categorias repetidas no plano da prova.".into());
+        }
         let qs: Vec<_> = bank
             .questions
             .iter()
-            .filter(|q| &q.category == cat)
+            .filter(|q| *n > 0 && &q.category == cat && eligible(q))
             .collect();
         if *n > qs.len() {
             return Err(format!(
-                "{cat}: há {} questões, mas foram pedidas {n}.",
+                "{cat}: há {} questões prontas e válidas, mas foram pedidas {n}.",
                 qs.len()
             ));
         }
-        if *n > 0 {
-            for q in qs {
-                validate(q).map_err(|e| format!("{}: {e}", q.title))?;
-            }
-        }
+        pools.insert(cat, qs);
     }
     let mut rng = StdRng::seed_from_u64(seed);
     let mut students = vec![];
+    let mut common = BTreeMap::new();
+    if same_questions {
+        for (cat, n) in plan {
+            let mut qs = pools[cat].clone();
+            qs.shuffle(&mut rng);
+            qs.truncate(*n);
+            common.insert(cat, qs);
+        }
+    }
     for name in names {
         let mut questions = vec![];
         for (cat, n) in plan {
-            let mut qs: Vec<_> = bank
-                .questions
-                .iter()
-                .filter(|q| &q.category == cat)
-                .collect();
-            qs.shuffle(&mut rng);
+            let mut qs = if same_questions {
+                common[cat].clone()
+            } else {
+                pools[cat].clone()
+            };
+            if !same_questions {
+                qs.shuffle(&mut rng);
+            }
             for q in qs.into_iter().take(*n) {
                 let values = sample(q, &mut rng);
                 questions.push(
-                    instance(q, values, &mut rng, true).map_err(|e| format!("{}: {e}", q.title))?,
+                    instance(q, values, &mut rng, !same_questions)
+                        .map_err(|e| format!("{}: {e}", q.title))?,
                 );
             }
         }
@@ -928,6 +983,7 @@ pub fn generate(
     Ok(Batch {
         version: 1,
         seed,
+        same_questions,
         plan: plan.to_vec(),
         title: title.into(),
         institution: institution.into(),
@@ -968,6 +1024,48 @@ pub fn merge_import(
     bank.questions.extend(staged);
     bank.category_labels = categories(bank);
     Ok(count)
+}
+/// Move selected subtrees, or delete them with their questions, atomically.
+pub fn bulk_categories(
+    bank: &mut Bank,
+    selected: &BTreeSet<String>,
+    destination: Option<&str>,
+) -> Result<(), String> {
+    let labels = categories(bank);
+    if selected.is_empty() || selected.iter().any(|p| !labels.contains(p)) {
+        return Err("Selecione categorias existentes.".into());
+    }
+    let roots: Vec<_> = selected
+        .iter()
+        .filter(|p| {
+            !selected
+                .iter()
+                .any(|other| *p != other && category_matches(p, other))
+        })
+        .cloned()
+        .collect();
+    let mut staged = bank.clone();
+    if let Some(destination) = destination {
+        if !labels.iter().any(|p| p == destination)
+            || roots.iter().any(|p| category_matches(destination, p))
+        {
+            return Err("Escolha um destino fora das categorias selecionadas.".into());
+        }
+        for root in &roots {
+            let name = root.rsplit('/').next().unwrap();
+            rename_category(&mut staged, root, name, destination)?;
+        }
+    } else {
+        staged
+            .questions
+            .retain(|q| !roots.iter().any(|p| category_matches(&q.category, p)));
+        staged.category_labels = labels
+            .into_iter()
+            .filter(|p| !roots.iter().any(|root| category_matches(p, root)))
+            .collect();
+    }
+    *bank = staged;
+    Ok(())
 }
 pub fn remove_category(bank: &mut Bank, path: &str, destination: &str) -> Result<(), String> {
     let labels = categories(bank);
@@ -1034,6 +1132,7 @@ pub fn examples() -> Bank {
         answers: &[&str],
     ) -> Question {
         Question {
+            status: QuestionStatus::Ready,
             import_issues: vec![],
             source_xml: None,
             id,
@@ -1354,6 +1453,7 @@ pub fn import_xml(path: &Path) -> Result<Bank, String> {
             })
             .collect::<Result<Vec<_>, String>>()?;
         let q = Question {
+            status: QuestionStatus::Ready,
             id: questions.len() as u64 + 1,
             title: n.nested("name"),
             // carregar_questoes (0xc549), category branch at 0xc680:
@@ -1384,6 +1484,107 @@ pub fn import_xml(path: &Path) -> Result<Bank, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn status_compatibility_and_eligible_generation_modes() {
+        let mut bank = examples();
+        let mut legacy = serde_json::to_value(&bank.questions[0]).unwrap();
+        legacy.as_object_mut().unwrap().remove("status");
+        assert_eq!(
+            serde_json::from_value::<Question>(legacy).unwrap().status,
+            QuestionStatus::Ready
+        );
+        bank.questions[0].status = QuestionStatus::Draft;
+        bank.questions[1].text = "{=1/0}".into();
+        assert!(!eligible(&bank.questions[0]));
+        assert!(!eligible(&bank.questions[1]));
+        let plan = vec![("Mecânica".into(), 1)];
+        let batch = generate_with_mode(&bank, &plan, "Ana\nBia", 42, "Prova", "", "", "", "", true)
+            .unwrap();
+        assert!(batch.same_questions);
+        assert!(batch
+            .students
+            .iter()
+            .all(|s| s.questions[0].title == bank.questions[2].title));
+        assert!(generate_with_mode(
+            &bank,
+            &[("Mecânica".into(), 2)],
+            "Ana",
+            42,
+            "Prova",
+            "",
+            "",
+            "",
+            "",
+            true
+        )
+        .err()
+        .unwrap()
+        .contains("prontas e válidas"));
+        let restored: Bank = serde_json::from_slice(&serde_json::to_vec(&bank).unwrap()).unwrap();
+        assert_eq!(restored.questions[0].status, QuestionStatus::Draft);
+        let bank = examples();
+        let names = (0..12)
+            .map(|n| format!("Aluno {n}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let shared =
+            generate_with_mode(&bank, &plan, &names, 25, "Prova", "", "", "", "", true).unwrap();
+        assert!(shared
+            .students
+            .iter()
+            .all(|s| s.questions[0].title == shared.students[0].questions[0].title));
+        assert!(shared
+            .students
+            .iter()
+            .any(|s| s.questions[0].values != shared.students[0].questions[0].values));
+        let independent =
+            generate_with_mode(&bank, &plan, &names, 25, "Prova", "", "", "", "", false).unwrap();
+        assert!(independent
+            .students
+            .iter()
+            .any(|s| s.questions[0].title != independent.students[0].questions[0].title));
+        let repeated =
+            generate_with_mode(&bank, &plan, &names, 25, "Prova", "", "", "", "", true).unwrap();
+        assert_eq!(
+            serde_json::to_value(&shared).unwrap(),
+            serde_json::to_value(repeated).unwrap()
+        );
+    }
+    #[test]
+    fn bulk_category_subtrees_are_atomic_and_count_nested_selection_once() {
+        let mut bank = examples();
+        bank.category_labels
+            .extend(["Destino".into(), "Mecânica/Sub".into(), "Óptica".into()]);
+        let selected = BTreeSet::from(["Mecânica".into(), "Mecânica/Sub".into(), "Óptica".into()]);
+        let before = serde_json::to_value(&bank).unwrap();
+        assert!(bulk_categories(&mut bank, &selected, Some("Mecânica/Sub")).is_err());
+        assert_eq!(serde_json::to_value(&bank).unwrap(), before);
+        bulk_categories(&mut bank, &selected, Some("Destino")).unwrap();
+        assert!(categories(&bank).contains(&"Destino/Mecânica/Sub".into()));
+        assert_eq!(bank.questions[0].category, "Destino/Mecânica");
+        let count = bank.questions.len();
+        bulk_categories(
+            &mut bank,
+            &BTreeSet::from(["Destino/Mecânica".into(), "Destino/Mecânica/Sub".into()]),
+            None,
+        )
+        .unwrap();
+        assert_eq!(bank.questions.len(), count - 3);
+        assert!(!categories(&bank)
+            .iter()
+            .any(|p| category_matches(p, "Destino/Mecânica")));
+        let mut bank = examples();
+        bank.category_labels
+            .extend(["Destino".into(), "Destino/Óptica".into(), "Óptica".into()]);
+        let before = serde_json::to_value(&bank).unwrap();
+        assert!(bulk_categories(
+            &mut bank,
+            &BTreeSet::from(["Mecânica".into(), "Óptica".into()]),
+            Some("Destino")
+        )
+        .is_err());
+        assert_eq!(serde_json::to_value(bank).unwrap(), before);
+    }
     #[test]
     fn deleting_category_preserves_questions_and_requires_external_destination() {
         let mut bank = examples();

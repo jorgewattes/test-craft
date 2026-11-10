@@ -2,9 +2,13 @@
 
 Configure categorias pelo botão de ícone ao lado do filtro. A janela permite criar, renomear, reorganizar e excluir categorias, transferindo suas questões para outro destino.
 
-Na importação JSON ou XML, confira as quantidades, os erros e as categorias antes de confirmar. Questões com erro podem ser incluídas para revisão no editor ou deixadas de fora. Os caminhos das categorias são preservados ao exportar e importar.
+Selecione vários arquivos JSON/XML de uma vez. Na conferência, altere o destino de cada categoria ou ajuste a categoria de uma questão individualmente antes de confirmar. Confira as quantidades, os erros e as categorias antes de confirmar. Questões com erro podem ser incluídas para revisão no editor ou deixadas de fora. Os caminhos das categorias são preservados ao exportar e importar.
 
 Em **Criar prova**, adicione um logo PNG ou JPEG se desejar. O logo é opcional, fica salvo nas preferências e acompanha o registro do lote; provas antigas continuam abrindo sem imagem.
+
+No editor, escolha **Rascunho** ou **Pronta**. Somente questões prontas e válidas são contabilizadas e sorteadas nas provas. Em **Questões por categoria**, marque **Manter as mesmas questões para todos os alunos** para variar apenas os valores, mantendo a ordem das questões e alternativas; desmarque para sorteios independentes.
+
+Na configuração de categorias, marque várias caixas para mover as categorias e suas subcategorias para dentro de outra categoria ou apagar todas as selecionadas com suas questões após confirmação.
 
 Crie questões calculadas, organize seu banco e gere provas e gabaritos individualizados em PDF. Gratuito, em português e com os dados salvos no computador. Feito com o Art Craft.
 
@@ -14,7 +18,7 @@ A versão **0.4.1** é distribuída em MSI e ZIP **sem assinatura digital**, con
 
 Baixe o [instalador MSI do Test Craft 0.4.1](https://github.com/jorgewattes/test-craft/releases/download/v0.4.1/test-craft-0.4.1-windows-x64.msi), execute o instalador e abra **Test Craft** pelo menu Iniciar. Requer Windows 10/11 de 64 bits e suporte a OpenGL.
 
-Para atualizar, feche o aplicativo e execute o novo MSI. Os dados ficam em **%LOCALAPPDATA%\Test Craft\data** e são preservados na atualização e desinstalação. Feche o aplicativo antes de copiar essa pasta para fazer backup.
+A partir da versão 0.4.2, abra **Sobre e atualizações**, verifique a versão e clique em **Baixar e instalar**. O aplicativo baixa e confere o SHA-256, solicita autorização administrativa pelo Windows e fecha para instalar; ao concluir, abra-o novamente. Os dados ficam em **%LOCALAPPDATA%\Test Craft\data** e são preservados na atualização e desinstalação. Feche o aplicativo antes de copiar essa pasta para fazer backup.
 
 A versão portátil em ZIP também está disponível: extraia e abra **test-craft.exe**. Nela, os dados ficam na pasta **data** ao lado do executável. Para migrar do ZIP ao MSI, feche o aplicativo e copie essa pasta para o caminho acima.
 
@@ -52,7 +56,7 @@ Se o login expirar, abra novamente o atalho. Não envie senhas ou tokens pelo ch
 
 No Craft Anything, o perfil **Codex Caderno GitHub** usa o executor do Craft (`build_command_run`) com seu usuário habitual do Windows. Se o terminal isolado informar **CodexSandboxOffline**, o Codex deve repetir a verificação por esse executor antes de solicitar um novo login. Se o executor estiver indisponível, abra o Codex ou o PowerShell com seu usuário habitual do Windows.
 
-O projeto fica em **C:\dev\moodtest2\app**, branch **main**, versão **0.4.1** e tag **v0.4.1**, no repositório **jorgewattes/test-craft**. Confira a conexão antes de enviar; a publicação só está concluída quando o workflow da tag terminar e a Release com MSI e ZIP estiver disponível no GitHub. A validação ICE do MSI é obrigatória no workflow; pacotes locais gerados com `-SkipMsiValidation` não substituem essa validação.
+O projeto fica em **C:\dev\moodtest2\app**, branch **main**, versão **0.4.2** e tag planejada **v0.4.2**, no repositório **jorgewattes/test-craft**. Confira a conexão antes de enviar; a publicação só está concluída quando o workflow da tag terminar e a Release com MSI e ZIP estiver disponível no GitHub. A validação ICE do MSI é obrigatória no workflow; pacotes locais gerados com `-SkipMsiValidation` não substituem essa validação.
 
 Com Rust e Visual Studio Build Tools instalados:
 

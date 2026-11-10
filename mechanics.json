@@ -49,8 +49,8 @@
     {
       "name": "shuffle alternatives",
       "group": "generation",
-      "value": true,
-      "source": "Python Question.instantiate L1042"
+      "value": "shuffle for independent question draws; retain original order for common questions mode",
+      "source": "User product requirement 2026-11-10 for 0.4.2; src/model.rs generate_with_mode"
     },
     {
       "name": "independent variables",
@@ -135,6 +135,42 @@
       "group": "calculation",
       "value": "decimal, hexadecimal 0x, octal 0o and binary 0b; Python separators",
       "source": "Python avaliar_expressao L173, parse call at source offset 0x14a5; _eval_ast L125, integer constant return 0xd00"
+    },
+    {
+      "name": "question readiness",
+      "group": "generation",
+      "value": "Only Ready and valid questions count or enter the pools; missing legacy status defaults to Ready",
+      "source": "User product requirement 2026-11-10 for 0.4.2; src/model.rs eligible; src/main.rs validation result cache"
+    },
+    {
+      "name": "shared question draws",
+      "group": "generation",
+      "value": "Optional common selection for all students; independent values; persisted in Setup and Batch",
+      "source": "User product requirement 2026-11-10 for 0.4.2; src/model.rs generate_with_mode"
+    },
+    {
+      "name": "multi-file import",
+      "group": "import",
+      "value": "Atomic XML/JSON staging with unique IDs; editable category destinations per group and question",
+      "source": "User product requirement 2026-11-10 for 0.4.2; src/import_view.rs read_import, remap_categories"
+    },
+    {
+      "name": "bulk category operations",
+      "group": "categories",
+      "value": "Normalized subtree roots; atomic moves with cycle/collision checks, confirmed subtree and question deletion",
+      "source": "User product requirement 2026-11-10 for 0.4.2; src/model.rs bulk_categories; src/category_view.rs"
+    },
+    {
+      "name": "in-app installation",
+      "group": "updates",
+      "value": "HTTPS MSI/ZIP download and SHA-256 validation before Windows admin authorization; wait for parent exit; preserve per-user identity and data; portable backup",
+      "source": "User product requirement 2026-11-10 for 0.4.2; src/updater.rs; src/update-launch.ps1; src/update-install.ps1"
+    },
+    {
+      "name": "database maintenance",
+      "group": "storage",
+      "value": "Incremental category operations; bounded WAL autocheckpoint=256, journal limit=8MiB; PRAGMA optimize at open/close; cached eligible counts",
+      "source": "User product requirement 2026-11-10 for 0.4.2; src/storage.rs; src/bank_view.rs"
     }
   ],
   "analysis": {

@@ -1,11 +1,95 @@
 use crate::*;
 
+pub(crate) fn read_import(paths: Vec<PathBuf>, remaining: usize) -> Result<ImportReview, String> {
+    let mut bank = Bank {
+        version: 1,
+        questions: vec![],
+        category_labels: vec![],
+    };
+    let source = paths
+        .iter()
+        .map(|p| p.file_name().unwrap_or_default().to_string_lossy())
+        .collect::<Vec<_>>()
+        .join(", ");
+    for path in paths {
+        let incoming = if path
+            .extension()
+            .and_then(|s| s.to_str())
+            .is_some_and(|e| e.eq_ignore_ascii_case("xml"))
+        {
+            import_xml(&path)
+        } else {
+            read_bank(&path)
+        }
+        .map_err(|e| {
+            format!(
+                "{}: {e}. Nenhum arquivo foi importado.",
+                path.file_name().unwrap_or_default().to_string_lossy()
+            )
+        })?;
+        merge_import(&mut bank, incoming, &BTreeSet::new(), true)?;
+        if bank.questions.len() > remaining {
+            return Err("A importação excederia o limite de 10.000 questões.".into());
+        }
+    }
+    let errors = bank
+        .questions
+        .iter()
+        .filter_map(|q| validate(q).err().map(|e| (q.id, e)))
+        .collect();
+    let destinations = bank
+        .questions
+        .iter()
+        .map(|q| (q.category.clone(), q.category.clone()))
+        .collect();
+    Ok(ImportReview {
+        bank,
+        errors,
+        source,
+        destinations,
+        overrides: BTreeMap::new(),
+    })
+}
+
+fn remap_categories(review: &mut ImportReview) {
+    for q in &mut review.bank.questions {
+        if let Some(destination) = review
+            .overrides
+            .get(&q.id)
+            .or_else(|| review.destinations.get(&q.category))
+        {
+            q.category = destination.trim().into();
+        }
+        if q.category.is_empty() {
+            q.category = "Importadas".into();
+        }
+    }
+    review.bank.category_labels = review
+        .bank
+        .category_labels
+        .iter()
+        .map(|p| review.destinations.get(p).unwrap_or(p).trim().to_owned())
+        .filter(|p| !p.is_empty())
+        .collect();
+
+    // Category corrections can resolve validation errors from an imported file.
+    review.errors = review
+        .bank
+        .questions
+        .iter()
+        .filter_map(|q| validate(q).err().map(|e| (q.id, e)))
+        .collect();
+}
+
 impl App {
     pub(crate) fn import_dialog(&mut self, ctx: &egui::Context) {
         if let Some(rx) = &self.import_loading {
             match rx.try_recv() {
-                Ok(review) => {
-                    self.import_review = Some(review);
+                Ok(result) => {
+                    match result {
+                        Ok(review) => self.import_review = Some(review),
+                        Err(e) => self.notify(e, true),
+                    }
                     self.import_loading = None;
                 }
                 Err(std::sync::mpsc::TryRecvError::Disconnected) => {
@@ -32,19 +116,20 @@ impl App {
             });
             return;
         }
-        let Some(review) = &self.import_review else {
+        let Some(review) = &mut self.import_review else {
             return;
         };
         let mut confirm = false;
         let mut cancel = false;
         egui::Modal::new(egui::Id::new("import_review")).show(ctx, |ui| {
             ui.set_width(640.);
+            egui::ScrollArea::vertical().id_salt("import_dialog_body").max_height((ctx.screen_rect().height()-100.).max(300.)).show(ui,|ui| {
             ui.heading("Conferir importação");
             small(ui, &review.source);
             ui.add_space(12.);
             ui.columns(3, |cols| {
                 for (i, (number, label, color)) in [
-                    (review.bank.questions.len(), "Questões no arquivo", INK),
+                    (review.bank.questions.len(), "Questões nos arquivos", INK),
                     (review.errors.len(), "Questões com erro", ERROR),
                     (categories(&review.bank).len(), "Categorias e subcategorias", TEAL),
                 ].into_iter().enumerate() {
@@ -56,7 +141,7 @@ impl App {
             });
             rule(ui);
             ui.label(R::new("Distribuição por categoria").strong());
-            small(ui, "Cada questão será alocada na categoria indicada no arquivo.");
+            small(ui, "Altere o destino de cada categoria antes de importar. Também é possível ajustar cada questão abaixo.");
             let mut counts: BTreeMap<String, (usize, usize)> = categories(&review.bank).into_iter().map(|c| (c, (0, 0))).collect();
             for q in &review.bank.questions {
                 let c = counts.entry(q.category.clone()).or_default();
@@ -67,11 +152,26 @@ impl App {
                 for (path, (count, errors)) in counts {
                     ui.horizontal(|ui| {
                         ui.label(if path.is_empty() { "Sem categoria (revisar)".into() } else { path.replace('/', " / ") });
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            small(ui, format!("{count} questões · {errors} com erro"));
-                        });
+                        small(ui, format!("{count} questões · {errors} com erro"));
+                    });
+                    ui.push_id(&path, |ui| {
+                        let destination=review.destinations.entry(path.clone()).or_insert(path.clone());
+                        let choices=categories(&review.bank).into_iter().chain(self.index.categories.clone()).collect::<BTreeSet<_>>().into_iter().collect::<Vec<_>>();
+                        category_dropdown(ui,"import_destination",destination,&choices,false);
+                        ui.add(egui::TextEdit::singleline(destination).hint_text("Ou digite uma nova categoria / subcategoria").desired_width(f32::INFINITY));
                     });
                 }
+            });
+            egui::CollapsingHeader::new("Ajustar categoria por questão").show(ui, |ui| {
+                egui::ScrollArea::vertical().id_salt("import_question_categories").max_height(200.).show(ui, |ui| {
+                    for q in &review.bank.questions {
+                        ui.push_id(q.id, |ui| {
+                            ui.label(&q.title);
+                            let mut destination=review.overrides.get(&q.id).or_else(||review.destinations.get(&q.category)).unwrap_or(&q.category).clone();
+                            if ui.add(egui::TextEdit::singleline(&mut destination).hint_text("Categoria / subcategoria").desired_width(f32::INFINITY)).changed() { review.overrides.insert(q.id,destination); }
+                        });
+                    }
+                });
             });
             if !review.errors.is_empty() {
                 rule(ui);
@@ -96,9 +196,11 @@ impl App {
                 });
                 cancel = secondary(ui, "Cancelar").clicked();
             });
+            });
         });
         if confirm {
-            let review = self.import_review.take().unwrap();
+            let mut review = self.import_review.take().unwrap();
+            remap_categories(&mut review);
             let previous = self.bank.clone();
             match merge_import(
                 &mut self.bank,
@@ -113,7 +215,7 @@ impl App {
                         self.search.clear();
                         self.notify(
                             format!(
-                                "{count} questões importadas e salvas nas categorias do arquivo."
+                                "{count} questões importadas e salvas nas categorias escolhidas."
                             ),
                             false,
                         );
@@ -126,5 +228,42 @@ impl App {
         } else if cancel || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             self.import_review = None;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn multiple_files_remap_ids_and_categories_without_partial_import() {
+        let folder = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("checks/multi-import-042");
+        std::fs::create_dir_all(&folder).unwrap();
+        let first = folder.join("first.json");
+        let second = folder.join("second.xml");
+        let mut bank = examples();
+        bank.questions.truncate(1);
+        bank.questions[0].status = QuestionStatus::Draft;
+        save_bank(&first, &bank).unwrap();
+        std::fs::write(&second,r#"<quiz><question type="multichoice"><name><text>Segunda</text></name><questiontext><text>Escolha</text></questiontext><answer fraction="100"><text>A</text></answer><answer fraction="0"><text>B</text></answer></question></quiz>"#).unwrap();
+        let mut review = read_import(vec![first.clone(), second.clone()], 10).unwrap();
+        assert_eq!(review.bank.questions.len(), 2);
+        assert_ne!(review.bank.questions[0].id, review.bank.questions[1].id);
+        assert_eq!(review.bank.questions[0].status, QuestionStatus::Draft);
+        review
+            .destinations
+            .insert("Mecânica".into(), "Nova/Sub".into());
+        review
+            .destinations
+            .insert("Importadas".into(), "Destino".into());
+        review
+            .overrides
+            .insert(review.bank.questions[1].id, "Individual".into());
+        remap_categories(&mut review);
+        assert_eq!(review.bank.questions[0].category, "Nova/Sub");
+        assert_eq!(review.bank.questions[1].category, "Individual");
+        assert!(review.errors.is_empty());
+        assert!(read_import(vec![first.clone(), second.clone()], 1).is_err());
+        std::fs::write(&second, "<quiz><question>").unwrap();
+        assert!(read_import(vec![first, second], 10).is_err());
     }
 }

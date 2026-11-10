@@ -1,3 +1,13 @@
+# Test Craft 0.4.2
+
+- Atualização dentro do aplicativo: download de MSI ou ZIP, verificação SHA-256, autorização administrativa do Windows e instalação com preservação dos dados. Falhas e cancelamentos são informados; a versão portátil mantém uma cópia do executável anterior.
+- Botões, seletores e dropdowns com medidas, bordas, estados e cores padronizados; seleção de questões com ações em lote consistentes.
+- Importação simultânea de arquivos XML/JSON, com conferência única e alteração da categoria por grupo ou por questão antes de confirmar.
+- Seleção de várias categorias para mover suas árvores para outra categoria ou apagar categorias e questões, com confirmação e transação atômica.
+- Status Pronta/Rascunho no editor e no banco. Provas contam e sorteiam apenas questões prontas e válidas; questões antigas preservam compatibilidade.
+- Opção para manter as mesmas questões entre alunos, variando os valores, ou sortear questões independentemente para cada aluno. A opção fica salva nas preferências e no lote.
+- Banco otimizado com estatísticas do SQLite, manutenção limitada do WAL, reutilização de contagens e menos consultas e gravações de categorias.
+
 # Test Craft 0.4.1
 
 - Publicação autorizada do MSI e ZIP sem certificado, com checksums SHA-256 e aviso de ausência de assinatura nas notas da release; validação ICE preservada.

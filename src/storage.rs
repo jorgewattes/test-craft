@@ -175,6 +175,10 @@ impl BankStore {
             store.save(&bank, None)?;
         }
         let bank = store.load()?;
+        store
+            .connection
+            .execute_batch("PRAGMA optimize=0x10002;")
+            .map_err(|e| e.to_string())?;
         Ok((store, bank))
     }
 
@@ -185,7 +189,7 @@ impl BankStore {
             .map_err(|e| e.to_string())?;
         connection
             .execute_batch(
-                "PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;",
+                "PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA wal_autocheckpoint=256; PRAGMA journal_size_limit=8388608;",
             )
             .map_err(|e| e.to_string())?;
         let version: i64 = connection
@@ -310,13 +314,22 @@ impl BankStore {
                 "O banco foi alterado em outra janela. Reabra o aplicativo antes de salvar.".into(),
             );
         }
+        let old_labels: Option<BTreeSet<String>> = previous.map(|bank| {
+            categories(bank)
+                .into_iter()
+                .chain(bank.questions.iter().map(|q| q.category.clone()))
+                .collect()
+        });
         let mut labels: BTreeSet<_> = categories(bank).into_iter().collect();
         labels.extend(bank.questions.iter().map(|q| q.category.clone()));
         {
             let mut insert = tx
                 .prepare_cached("INSERT OR IGNORE INTO categories(path,parent) VALUES (?1,?2)")
                 .map_err(|e| e.to_string())?;
-            for path in &labels {
+            for path in labels
+                .iter()
+                .filter(|p| old_labels.as_ref().is_none_or(|old| !old.contains(*p)))
+            {
                 let parent = path
                     .rsplit_once('/')
                     .map(|(p, _)| p)
@@ -354,7 +367,9 @@ impl BankStore {
                 }
             }
         }
-        let existing = {
+        let existing = if let Some(old) = old_labels {
+            old.into_iter().collect::<Vec<_>>()
+        } else {
             let mut stmt = tx
                 .prepare("SELECT path FROM categories")
                 .map_err(|e| e.to_string())?;
@@ -376,5 +391,13 @@ impl BankStore {
         tx.commit().map_err(|e| e.to_string())?;
         self.revision += 1;
         Ok(())
+    }
+}
+
+impl Drop for BankStore {
+    fn drop(&mut self) {
+        let _ = self
+            .connection
+            .execute_batch("PRAGMA optimize; PRAGMA wal_checkpoint(PASSIVE);");
     }
 }

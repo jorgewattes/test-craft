@@ -65,6 +65,7 @@ fn version(s: &str) -> Option<[u64; 3]> {
 pub struct Release {
     pub version: String,
     pub url: String,
+    pub package: String,
 }
 #[derive(Deserialize)]
 struct ApiRelease {
@@ -106,9 +107,11 @@ fn parse_release(bytes: &[u8], repo: &str, current: &str) -> Result<Option<Relea
             "A versão {number} existe, mas o pacote Windows ainda não está disponível."
         ));
     }
+    let package = format!("test-craft-{number}-windows-x64.msi");
     Ok(Some(Release {
         version: number.into(),
-        url: format!("https://github.com/{repo}/releases/latest"),
+        url: format!("https://github.com/{repo}/releases/download/{}", r.tag_name),
+        package,
     }))
 }
 fn fetch(repo: &str) -> Result<Option<Release>, String> {
@@ -153,6 +156,8 @@ pub struct Updater {
     pub offer: bool,
     receiver: Option<mpsc::Receiver<Result<Option<Release>, String>>>,
     last_check: Option<Instant>,
+    install_receiver: Option<mpsc::Receiver<Result<(), String>>>,
+    pub close_requested: bool,
 }
 impl Updater {
     pub fn load(data: &Path) -> Self {
@@ -167,6 +172,8 @@ impl Updater {
             offer: false,
             receiver: None,
             last_check: None,
+            install_receiver: None,
+            close_requested: false,
         }
     }
     pub fn save(&mut self, data: &Path, input: &str, automatic: bool) -> Result<(), String> {
@@ -184,8 +191,11 @@ impl Updater {
         self.message = "Preferências de atualização salvas.".into();
         Ok(())
     }
+    pub fn installing(&self) -> bool {
+        self.install_receiver.is_some() || self.close_requested
+    }
     pub fn busy(&self) -> bool {
-        self.receiver.is_some()
+        self.receiver.is_some() || self.install_receiver.is_some()
     }
     pub fn check(&mut self, ctx: &eframe::egui::Context) {
         if self.busy() {
@@ -210,7 +220,45 @@ impl Updater {
             ctx.request_repaint();
         });
     }
+    pub fn install(&mut self, ctx: &eframe::egui::Context) {
+        if self.busy() {
+            return;
+        }
+        let Some(release) = self.available.clone() else {
+            return;
+        };
+        self.offer = false;
+        self.message =
+            "Baixando e verificando atualização… Aguarde a autorização do Windows.".into();
+        let (tx, rx) = mpsc::channel();
+        self.install_receiver = Some(rx);
+        let ctx = ctx.clone();
+        std::thread::spawn(move || {
+            let _ = tx.send(download_and_launch(&release));
+            ctx.request_repaint();
+        });
+    }
     pub fn tick(&mut self, ctx: &eframe::egui::Context) {
+        if let Some(rx) = &self.install_receiver {
+            match rx.try_recv() {
+                Ok(result) => {
+                    self.install_receiver = None;
+                    match result {
+                        Ok(()) => {
+                            self.close_requested = true;
+                            self.message = "Instalação autorizada. Fechando para atualizar…".into();
+                        }
+                        Err(e) => self.message = e,
+                    }
+                }
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    self.install_receiver = None;
+                    self.message = "Atualização interrompida. Tente novamente.".into();
+                }
+                Err(mpsc::TryRecvError::Empty) => {}
+            }
+            ctx.request_repaint_after(Duration::from_millis(200));
+        }
         if let Some(rx) = &self.receiver {
             match rx.try_recv() {
                 Ok(result) => {
@@ -250,11 +298,138 @@ impl Updater {
         }
     }
 }
+
+fn hidden_command(exe: &std::ffi::OsStr) -> std::process::Command {
+    let mut command = std::process::Command::new(exe);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x08000000);
+    }
+    command
+}
+fn checksum(bytes: &[u8], name: &str) -> Result<String, String> {
+    let text = std::str::from_utf8(bytes).map_err(|_| "Checksum inválido.")?;
+    let parts = text.split_whitespace().collect::<Vec<_>>();
+    if parts.len() != 2
+        || parts[1].trim_start_matches('*') != name
+        || parts[0].len() != 64
+        || !parts[0].bytes().all(|b| b.is_ascii_hexdigit())
+    {
+        return Err(
+            "O checksum do pacote está ausente ou inválido. A instalação foi cancelada.".into(),
+        );
+    }
+    Ok(parts[0].to_ascii_lowercase())
+}
+fn download_and_launch(release: &Release) -> Result<(), String> {
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let installed = exe
+        .parent()
+        .is_some_and(|p| p.join("installed.txt").exists());
+    let name = if installed {
+        release.package.clone()
+    } else {
+        release.package.replace(".msi", ".zip")
+    };
+    let folder = std::env::temp_dir().join(format!(
+        "TestCraft-update-{}-{}",
+        std::process::id(),
+        crate::now()
+    ));
+    std::fs::create_dir(&folder).map_err(|e| e.to_string())?;
+    let package = folder.join(&name);
+    let curl = std::path::PathBuf::from(
+        std::env::var_os("SystemRoot").unwrap_or_else(|| r"C:\Windows".into()),
+    )
+    .join("System32/curl.exe");
+    let fetch = |url: &str, path: &Path, limit: &str| -> Result<(), String> {
+        let result = hidden_command(curl.as_os_str())
+            .args([
+                "--fail",
+                "--silent",
+                "--show-error",
+                "--location",
+                "--proto",
+                "=https",
+                "--proto-redir",
+                "=https",
+                "--tlsv1.2",
+                "--connect-timeout",
+                "15",
+                "--max-time",
+                "600",
+                "--max-filesize",
+                limit,
+                "--output",
+            ])
+            .arg(path)
+            .arg(url)
+            .output()
+            .map_err(|e| e.to_string())?;
+        if !result.status.success() {
+            return Err("Não foi possível baixar o pacote e seu checksum. Confira a conexão e tente novamente.".into());
+        }
+        Ok(())
+    };
+    fetch(&format!("{}/{}", release.url, name), &package, "268435456")?;
+    let sha = folder.join("package.sha256");
+    fetch(&format!("{}/{}.sha256", release.url, name), &sha, "4096")?;
+    let hash = checksum(&std::fs::read(sha).map_err(|e| e.to_string())?, &name)?;
+    let helper = folder.join("install.ps1");
+    std::fs::write(&helper, include_str!("update-install.ps1")).map_err(|e| e.to_string())?;
+    let job = folder.join("job.json");
+    let result_path = crate::data_root().join("update-result.txt");
+    let job_bytes=serde_json::to_vec(&serde_json::json!({"package":package,"sha256":hash,"executable":exe,"installed":installed,"parentId":std::process::id(),"result":result_path})).map_err(|e|e.to_string())?;
+    std::fs::write(&job, job_bytes).map_err(|e| e.to_string())?;
+    let launcher = folder.join("launch.ps1");
+    std::fs::write(&launcher, include_str!("update-launch.ps1")).map_err(|e| e.to_string())?;
+    let powershell = std::path::PathBuf::from(
+        std::env::var_os("SystemRoot").unwrap_or_else(|| r"C:\Windows".into()),
+    )
+    .join("System32/WindowsPowerShell/v1.0/powershell.exe");
+    let output = hidden_command(powershell.as_os_str())
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+        ])
+        .arg(launcher)
+        .arg("-Job")
+        .arg(job)
+        .output()
+        .map_err(|e| e.to_string())?;
+    if !output.status.success() {
+        return Err(format!(
+            "Atualização cancelada ou não autorizada: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    Ok(())
+}
 #[cfg(test)]
 mod tests {
     use super::*;
     fn payload(tag: &str) -> Vec<u8> {
         serde_json::to_vec(&serde_json::json!({"tag_name":tag,"assets":[{"name":format!("test-craft-{}-windows-x64.zip",tag.trim_start_matches('v')),"state":"uploaded"}]})).unwrap()
+    }
+    #[test]
+    fn refuses_wrong_or_malformed_checksums() {
+        let hash = "a".repeat(64);
+        assert_eq!(
+            checksum(format!("{hash}  package.msi\r\n").as_bytes(), "package.msi").unwrap(),
+            hash
+        );
+        for text in [
+            format!("{hash} wrong.msi"),
+            format!("{} package.msi", "z".repeat(64)),
+            format!("{hash} package.msi extra"),
+            "abc package.msi".into(),
+        ] {
+            assert!(checksum(text.as_bytes(), "package.msi").is_err());
+        }
     }
     #[test]
     fn accepts_only_github_repositories() {
@@ -309,7 +484,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             r.url,
-            "https://github.com/escola/test-craft/releases/latest"
+            "https://github.com/escola/test-craft/releases/download/v1.2.0"
         );
     }
     #[test]
@@ -349,6 +524,7 @@ mod tests {
         updater.receiver = Some(rx);
         tx.send(Ok(Some(Release {
             version: "1.0.0".into(),
+            package: "test-craft-1.0.0-windows-x64.msi".into(),
             url: "https://github.com/escola/test-craft/releases/latest".into(),
         })))
         .unwrap();
