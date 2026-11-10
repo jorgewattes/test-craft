@@ -7,16 +7,18 @@ function New-WindowsSigningConfig {
         [ValidateSet('CurrentUser', 'LocalMachine')][string]$Store = 'CurrentUser',
         [string]$SignToolPath,
         [string]$TimestampUrl = 'http://timestamp.digicert.com',
-        [switch]$AllowUnsigned
+        [switch]$AllowUnsigned,
+        [string]$AuthorizedUnsignedVersion = ''
     )
-    if ($AllowUnsigned -and $env:GITHUB_REF_TYPE -eq 'tag') {
-        throw 'Uma release por tag exige assinatura; -AllowUnsigned serve apenas para preparacao local.'
+    if ($AllowUnsigned -and $env:GITHUB_REF_TYPE -eq 'tag' -and
+        ($AuthorizedUnsignedVersion -notmatch '^\d+\.\d+\.\d+$' -or $env:GITHUB_REF_NAME -ne "v$AuthorizedUnsignedVersion")) {
+        throw 'Uma release por tag exige assinatura ou autorizacao explicita para esta versao em release-config.json.'
     }
     if (-not $Thumbprint) {
         if (-not $AllowUnsigned) {
             throw 'Certificado ausente. Configure TEST_CRAFT_SIGNING_THUMBPRINT com um certificado confiavel de assinatura de codigo. Para preparacao local sem assinatura, use -AllowUnsigned; o aviso de autor desconhecido permanecera.'
         }
-        Write-Warning 'Pacote local SEM ASSINATURA: o Windows continuara mostrando autor desconhecido.'
+        Write-Warning 'Pacote SEM ASSINATURA: o Windows continuara mostrando autor desconhecido.'
         return [pscustomobject]@{ Enabled = $false }
     }
     $Thumbprint = ($Thumbprint -replace '\s', '').ToUpperInvariant()

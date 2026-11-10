@@ -13,7 +13,18 @@ jobs:
       - name: Check signing safeguards
         shell: pwsh
         run: ./scripts/test-windows-signing.ps1
+      - name: Read release signing policy
+        id: signing
+        shell: pwsh
+        run: |
+          $version = [regex]::Match((Get-Content Cargo.toml -Raw), '(?m)^version = "([0-9]+\.[0-9]+\.[0-9]+)"').Groups[1].Value
+          if (-not $version) { throw 'Versao invalida no Cargo.toml.' }
+          if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne "v$version") { throw 'Tag diferente da versao do Cargo.toml.' }
+          $config = Get-Content release-config.json -Raw | ConvertFrom-Json
+          $unsigned = ($config.unsignedReleaseVersion -ceq $version).ToString().ToLowerInvariant()
+          "unsigned=$unsigned" >> $env:GITHUB_OUTPUT
       - name: Load code signing certificate
+        if: steps.signing.outputs.unsigned != 'true'
         shell: pwsh
         env:
           SIGNING_PFX_BASE64: ${{ secrets.TEST_CRAFT_SIGNING_PFX_BASE64 }}

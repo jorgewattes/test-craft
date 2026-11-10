@@ -1,5 +1,6 @@
 # Test Craft 0.4.1
 
+- Publicação autorizada do MSI e ZIP sem certificado, com checksums SHA-256 e aviso de ausência de assinatura nas notas da release; validação ICE preservada.
 - Configuração completa de categorias em uma janela, acessada por ícone; hierarquia sem caracteres ausentes, busca, contagem e exclusão com transferência das questões.
 - Conferência antes da importação com totais, erros, distribuição por categoria e escolha de incluir questões que precisam de revisão. XML Moodle mantém os caminhos das subcategorias.
 - Cabeçalho de prova renovado com logo opcional; categorias preservadas nas seleções JSON, registros, provas, gabaritos e CSV.

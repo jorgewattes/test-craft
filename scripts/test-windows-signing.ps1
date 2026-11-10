@@ -11,6 +11,7 @@ function Assert-Rejected {
     throw "Expected rejection: $Expected"
 }
 $previousRefType = $env:GITHUB_REF_TYPE
+$previousRefName = $env:GITHUB_REF_NAME
 try {
     $env:GITHUB_REF_TYPE = ''
     Assert-Rejected { New-WindowsSigningConfig } 'Certificado ausente'
@@ -18,9 +19,20 @@ try {
     if ($unsigned.Enabled) { throw 'Unsigned preparation must never claim signing.' }
     Assert-Rejected { New-WindowsSigningConfig -Thumbprint 'invalid' -AllowUnsigned } 'Thumbprint'
     $env:GITHUB_REF_TYPE = 'tag'
+    $env:GITHUB_REF_NAME = 'v0.4.1'
     Assert-Rejected { New-WindowsSigningConfig -AllowUnsigned } 'release por tag exige assinatura'
     Assert-Rejected { New-WindowsSigningConfig -AllowUnsigned -Thumbprint ('A' * 40) } 'release por tag exige assinatura'
-} finally { $env:GITHUB_REF_TYPE = $previousRefType }
+    Assert-Rejected { New-WindowsSigningConfig -AllowUnsigned -AuthorizedUnsignedVersion '0.4.2' } 'release por tag exige assinatura'
+    Assert-Rejected { New-WindowsSigningConfig -AllowUnsigned -AuthorizedUnsignedVersion 'invalid' } 'release por tag exige assinatura'
+    Assert-Rejected { New-WindowsSigningConfig -AuthorizedUnsignedVersion '0.4.1' } 'Certificado ausente'
+    $unsignedTag = New-WindowsSigningConfig -AllowUnsigned -AuthorizedUnsignedVersion '0.4.1' -WarningAction SilentlyContinue
+    if ($unsignedTag.Enabled) { throw 'Authorized unsigned tag must never claim signing.' }
+    $env:GITHUB_REF_NAME = 'v0.4.2'
+    Assert-Rejected { New-WindowsSigningConfig -AllowUnsigned -AuthorizedUnsignedVersion '0.4.1' } 'release por tag exige assinatura'
+} finally {
+    $env:GITHUB_REF_TYPE = $previousRefType
+    $env:GITHUB_REF_NAME = $previousRefName
+}
 
 # Exercise invocation and failure propagation without accessing any private key.
 # These are policy tests; real cryptographic verification still requires a certificate.
@@ -57,4 +69,4 @@ $script:testSignature.Status = 'Valid'
 Assert-Rejected { Assert-WindowsSignature -Path 'fixture.exe' -SignToolPath Test-SignTool -Thumbprint ('B' * 40) } 'inesperado'
 $script:testSignature.TimeStamperCertificate = $null
 Assert-Rejected { Assert-WindowsSignature -Path 'fixture.exe' -SignToolPath Test-SignTool -Thumbprint $fixture.Thumbprint } 'inesperado'
-Write-Host 'Signing safeguards: 11 checks passed. Signature invocation uses fixtures; real signing needs a trusted certificate.'
+Write-Host 'Signing safeguards: 16 checks passed. Signature invocation uses fixtures; real signing needs a trusted certificate.'

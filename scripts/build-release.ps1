@@ -10,18 +10,21 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-Location (Split-Path $PSScriptRoot -Parent)
 . (Join-Path $PSScriptRoot 'windows-signing.ps1')
-# Fail before building or overwriting packages when a release cannot be signed.
-$signing = New-WindowsSigningConfig -Thumbprint $SigningCertificateThumbprint -Store $SigningCertificateStore -SignToolPath $SignToolPath -TimestampUrl $TimestampUrl -AllowUnsigned:$AllowUnsigned
+$config = Get-Content -LiteralPath release-config.json -Raw | ConvertFrom-Json
 if ($Repository) {
     if ($Repository -notmatch '^[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*$') { throw 'Use conta/repositorio.' }
-    @{ repository = $Repository } | ConvertTo-Json | Set-Content -LiteralPath release-config.json -Encoding UTF8
+    $config.repository = $Repository
 }
-$config = Get-Content -LiteralPath release-config.json -Raw
-[IO.File]::WriteAllText((Join-Path $PWD 'release-config.json'), $config.TrimStart([char]0xFEFF), (New-Object Text.UTF8Encoding $false))
+[IO.File]::WriteAllText((Join-Path $PWD 'release-config.json'), ($config | ConvertTo-Json) + [Environment]::NewLine, (New-Object Text.UTF8Encoding $false))
 $manifest = Get-Content -LiteralPath Cargo.toml -Raw
 $version = [regex]::Match($manifest, '(?m)^version = "([0-9]+\.[0-9]+\.[0-9]+)"').Groups[1].Value
 if (-not $version) { throw 'Versao invalida no Cargo.toml.' }
 if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne "v$version") { throw 'A tag precisa corresponder a versao do Cargo.toml.' }
+$unsignedRelease = $config.unsignedReleaseVersion -ceq $version
+# The reviewed exception applies only to this version, including on tag builds.
+if ($unsignedRelease) { $SigningCertificateThumbprint = '' }
+$signing = New-WindowsSigningConfig -Thumbprint $SigningCertificateThumbprint -Store $SigningCertificateStore -SignToolPath $SignToolPath -TimestampUrl $TimestampUrl -AllowUnsigned:($AllowUnsigned -or $unsignedRelease) -AuthorizedUnsignedVersion $config.unsignedReleaseVersion
+if ($env:GITHUB_REF_TYPE -eq 'tag' -and $SkipMsiValidation) { throw 'Publicacao por tag exige validacao ICE.' }
 $changelog = Get-Content -LiteralPath CHANGELOG.md -Raw -Encoding UTF8
 $notes = [regex]::Match($changelog, '(?ms)^# Test Craft ' + [regex]::Escape($version) + '\r?\n(.*?)(?=^# Test Craft |\z)')
 if (-not $notes.Success) { throw 'Faltam as notas desta versao no CHANGELOG.md.' }
@@ -41,7 +44,9 @@ try {
 $packageName = "test-craft-$version-windows-x64"
 $stage = Join-Path $PWD "dist/$packageName"
 New-Item -ItemType Directory -Force -Path $stage | Out-Null
-[IO.File]::WriteAllText((Join-Path $PWD 'dist/release-notes.md'), $notes.Groups[1].Value.Trim() + [Environment]::NewLine, (New-Object Text.UTF8Encoding $false))
+$releaseNotes = $notes.Groups[1].Value.Trim()
+if (-not $signing.Enabled) { $releaseNotes += "`n`nMSI e ZIP publicados sem assinatura digital. O Windows pode mostrar Autor desconhecido. Confira os arquivos SHA-256 que acompanham os pacotes." }
+[IO.File]::WriteAllText((Join-Path $PWD 'dist/release-notes.md'), $releaseNotes + [Environment]::NewLine, (New-Object Text.UTF8Encoding $false))
 Copy-Item -LiteralPath "target/$releaseTarget/release/test-craft.exe" -Destination (Join-Path $stage 'test-craft.exe') -Force
 # Sign the staged executable before it enters either the ZIP or the MSI.
 Invoke-WindowsSigning -Path (Join-Path $stage 'test-craft.exe') -Config $signing
@@ -93,4 +98,4 @@ $signatureFiles = @((Join-Path $stage 'test-craft.exe'), $msi) | ForEach-Object 
 $report = [ordered]@{ signed = [bool]$signing.Enabled; files = @($signatureFiles) } | ConvertTo-Json -Depth 4
 [IO.File]::WriteAllText((Join-Path $PWD 'dist/signing-status.json'), $report, (New-Object Text.UTF8Encoding $false))
 if ($signing.Enabled) { Write-Host "Release assinada e verificada: $msi e $zip" }
-else { Write-Warning "Pacotes locais SEM ASSINATURA: $msi e $zip. Nao resolvem o aviso de autor desconhecido." }
+else { Write-Warning "Pacotes SEM ASSINATURA: $msi e $zip. Nao resolvem o aviso de autor desconhecido." }
