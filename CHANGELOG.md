@@ -1,5 +1,7 @@
 # Test Craft 0.4.2
 
+- Publicação de MSI e ZIP sem assinatura digital, com checksums SHA-256 e validação ICE obrigatória.
+- Compatibilidade dos cálculos com o original: literais hexadecimais, octais e binários, separadores numéricos e normalização de `ln(` antes da remoção de espaços.
 - Atualização dentro do aplicativo: download de MSI ou ZIP, verificação SHA-256, autorização administrativa do Windows e instalação com preservação dos dados. Falhas e cancelamentos são informados; a versão portátil mantém uma cópia do executável anterior.
 - Botões, seletores e dropdowns com medidas, bordas, estados e cores padronizados; seleção de questões com ações em lote consistentes.
 - Importação simultânea de arquivos XML/JSON, com conferência única e alteração da categoria por grupo ou por questão antes de confirmar.

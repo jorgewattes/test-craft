@@ -359,7 +359,7 @@ impl<'a> Parser<'a> {
                     "sin" => Ok(x.sin()),
                     "cos" => Ok(x.cos()),
                     "tan" => Ok(x.tan()),
-                    "log" | "ln" => Ok(x.ln()),
+                    "log" => Ok(x.ln()),
                     "log10" => Ok(x.log10()),
                     "exp" => Ok(x.exp()),
                     _ => Err(format!("Função {name} não permitida.")),
@@ -439,7 +439,10 @@ pub fn eval(expr: &str, vars: &BTreeMap<String, f64>) -> Result<f64, String> {
         rest = &rest[end + 1..];
     }
     expanded.push_str(rest);
-    let chars: Vec<_> = expanded
+    // MoodTest.py _preprocess_expr, source offset 0x128e (ln rewrite at 0x1370):
+    // replace ln( before removing whitespace, so ln (x) is not an alias.
+    let normalized = expanded.trim().replace('^', "**").replace("ln(", "log(");
+    let chars: Vec<_> = normalized
         .chars()
         .filter(|c| !c.is_whitespace())
         .map(|c| if c == ',' { '.' } else { c })
@@ -1483,6 +1486,28 @@ pub fn import_xml(path: &Path) -> Result<Bank, String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn expression_normalization_matches_original() {
+        let mechanics: serde_json::Value =
+            serde_json::from_str(include_str!("../mechanics.json")).unwrap();
+        let vars = BTreeMap::from([("ln".to_owned(), 7.0)]);
+        for case in mechanics["original"]["normalization_cases"]
+            .as_array()
+            .unwrap()
+        {
+            let expression = case["expression"].as_str().unwrap();
+            let result = eval(expression, &vars);
+            let rendered = render(&format!("{{={expression}}}"), &vars);
+            if let Some(expected) = case["result"].as_f64() {
+                assert_eq!(result.unwrap(), expected, "{expression}");
+                assert_eq!(rendered.unwrap(), fmt(expected), "{expression}");
+            } else {
+                assert!(result.is_err(), "{expression}: {result:?}");
+                assert!(rendered.is_err(), "{expression}: {rendered:?}");
+            }
+        }
+    }
+
     use super::*;
     #[test]
     fn status_compatibility_and_eligible_generation_modes() {

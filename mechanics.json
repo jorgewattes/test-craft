@@ -1,6 +1,12 @@
 {
   "version": 1,
   "values": [
+{
+  "name": "expression normalization order",
+  "group": "calculation",
+  "value": "trim; ^ to **; ln( to log(; remove whitespace; parse",
+  "source": "Python _preprocess_expr L160, source offset 0x128e; avaliar_expressao L173, source offset 0x13bd"
+},
     {
       "name": "import category hierarchy",
       "group": "categories",
@@ -184,6 +190,121 @@
     "native_reference_queries_awaited": 5
   },
   "original": {
+    "normalization_cases_provenance": "Derived by reading original _preprocess_expr and _eval_ast; original code was not executed in this review.",
+    "normalization_cases": [
+  {
+    "expression": "ln(1)",
+    "variables": {
+      "ln": 7
+    },
+    "result": 0
+  },
+  {
+    "expression": "ln (1)",
+    "variables": {
+      "ln": 7
+    },
+    "error": "ValueError"
+  },
+  {
+    "expression": "l n(1)",
+    "variables": {
+      "ln": 7
+    },
+    "error": "ValueError"
+  },
+  {
+    "expression": "ln( e )",
+    "variables": {
+      "ln": 7
+    },
+    "result": 1
+  },
+  {
+    "expression": "log (1)",
+    "variables": {
+      "ln": 7
+    },
+    "result": 0
+  },
+  {
+    "expression": "l o g(1)",
+    "variables": {
+      "ln": 7
+    },
+    "result": 0
+  },
+  {
+    "expression": "sqrt (4)",
+    "variables": {
+      "ln": 7
+    },
+    "result": 2
+  },
+  {
+    "expression": "s q r t (4)",
+    "variables": {
+      "ln": 7
+    },
+    "result": 2
+  },
+  {
+    "expression": "ln(1)+2",
+    "variables": {
+      "ln": 7
+    },
+    "result": 2
+  },
+  {
+    "expression": "ln (1)+2",
+    "variables": {
+      "ln": 7
+    },
+    "error": "ValueError"
+  },
+  {
+    "expression": "ln+1",
+    "variables": {
+      "ln": 7
+    },
+    "result": 8
+  },
+  {
+    "expression": "l n+1",
+    "variables": {
+      "ln": 7
+    },
+    "result": 8
+  },
+  {
+    "expression": "LN(1)",
+    "variables": {
+      "ln": 7
+    },
+    "error": "ValueError"
+  },
+  {
+    "expression": "log10 (100)",
+    "variables": {
+      "ln": 7
+    },
+    "result": 2
+  },
+  {
+    "expression": "2 ^ 3 ^ 2",
+    "variables": {
+      "ln": 7
+    },
+    "result": 512
+  },
+  {
+    "expression": "- 2 ^ 2",
+    "variables": {
+      "ln": 7
+    },
+    "result": -4
+  }
+],
     "path": "C:\\dev\\MoodTest\\MoodTest.py",
     "sha256": "c2b9ff9719e5ca4b7c837a22da5eae6a3bd2811d9eb17ef6895a730c038f1541",
     "kind": "Python source",

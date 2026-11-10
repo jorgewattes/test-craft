@@ -1,5 +1,55 @@
 # Regras verificadas no original
 
+## Conferência atual: ordem de normalização (10/11/2026)
+
+O principal original foi aberto nesta execução por `core_target_open`:
+`C:/dev/MoodTest/MoodTest.py`, 83.212 bytes, SHA-256
+`c2b9ff9719e5ca4b7c837a22da5eae6a3bd2811d9eb17ef6895a730c038f1541`.
+`core_session_show` confirmou Deep mode. Foram aguardadas sequencialmente
+3 buscas `native_strings_find` (nomes, configurações e mensagens),
+4 consultas `native_name_xrefs_list` e 22 chamadas individuais
+`native_function_pseudocode`. Todas retornaram `not_supported: Unknown file magic`.
+Registro integral: [checks/deep-current-review.json](checks/deep-current-review.json).
+**Não houve decompilação nativa bem-sucedida: o alvo é fonte Python.
+Os locais a seguir são offsets de bytes, não endereços virtuais;
+`native_address` é `null`.**
+
+A leitura das definições e chamadas recupera a cadeia
+`App.gerar_provas → Question.instantiate → Question._render_segments →
+Question._processar_texto → _replace_calculated_blocks →
+avaliar_expressao_com_variaveis → avaliar_expressao → _preprocess_expr → _eval_ast`.
+Importação passa por `carregar_questoes → _parse_correct_indices / Dataset`;
+exportação passa por `Exam._story → add_blank_answer_tables` e `Exam.export_pdf`.
+
+| Função / offset no arquivo original | Valor, fórmula ou regra recuperada |
+|---|---|
+| `_preprocess_expr` `0x128e`, substituição em `0x1370`; `avaliar_expressao` `0x13bd` | Ordem exata: trim, substituir `^` por `**`, substituir `ln(` por `log(`, remover espaços e analisar. `ln(1)=0`; `ln (1)` e `l n(1)` são recusadas. `log (1)=0` e `s q r t (4)=2`. Um dataset chamado ln continua acessível como nome: ln=7 implica `ln+1=8`. |
+| `_eval_ast` `0xc7b` | +, −, ×, ÷, potência, sinais unários; funções sqrt, abs, sin, cos, tan, log, log10, exp. Contexto precede pi/e para nomes; chamadas usam a tabela permitida. Potências associam à direita: `2^3^2=512`; `-2^2=-4`. |
+| `formatar_numero_pt` `0x1501`; `_replace_calculated_blocks` `0x3984`; `Question._processar_texto` `0x8f5a` | Duas casas: `Decimal(str(x)).quantize(10^-2, ROUND_HALF_UP)`; separador de milhar ponto e decimal vírgula. Inteiros perdem a fração zero. Chaves são substituídas antes do parse: x=−2 dá `{x}^2=-4`, `({x})^2=4`, `x^2=4`. |
+| `Dataset.sample` `0x832c`; `Question.instantiate` `0x888e`; seleção `0x12aa0` | Cada variável sorteia uma entrada independentemente; P(v)=contagem(v)/n. Seleção por categoria sem reposição; embaralhar alternativas remapeia os índices corretos. |
+| `letters_for` `0x7c98`; `indices_para_letras` `0xd0f7`; tabelas `0x7e27` | Letras minúsculas, corretas separadas por / e ausência indicada por `-`. Tabelas de respostas em blocos de 15, duas linhas, cabeçalho Q01 etc., grade preta de 0,75 pt. |
+| `Exam.export_pdf` `0x95d0` | A4: largura=210/25,4×72 pt; altura=297/25,4×72 pt. Margens originais=2/2,54×72 pt. O produto mantém a alteração solicitada para 1,5 cm. |
+
+Evidências desta conferência: definição `ev_94e292ed638b5c4b06a378b08cbe49e0cb6732ebac11cddcb805e7d39c4f6551`;
+substituição de ln `ev_ea25c5c9b4e039c7b85517fee1a6041f90e628ffc378098749d20757b857716d`.
+O mapa completo com as 86 definições, chamadas, linhas e offsets está em
+[checks/source-radix-review.json](checks/source-radix-review.json); as tabelas
+seguintes detalham importação, categorias, nomes de arquivo e demais regras.
+
+Nesta conferência, os 16 casos foram derivados da leitura do fonte, sem executar o original.
+`expression_normalization_matches_original` confirmou a divergência antes da correção
+(`ln (1): Ok(0.0)`) e passou depois. O avaliador usado pelo editor, validação,
+prévia e geração agora aplica a ordem recuperada. As decisões de produto e limites
+numéricos documentados nas seções seguintes continuam explicitamente separados.
+
+Validação: **47 testes passaram**; `cargo fmt --check` e
+`cargo build --release --locked` passaram (release em 58,43 s).
+`rebuild_check` aprovou build, inicialização/captura (2070 × 1350) e
+29 valores de mecânica (26 com fonte e 3 estimados).
+Executável atualizado: `target/release/test-craft.exe`.
+As contagens nas seções seguintes são registros históricos.
+
+
 ## Conferência atual: bases inteiras (10/11/2026)
 
 Reaberto com `core_target_open` o programa principal original

@@ -14,9 +14,9 @@ Crie questões calculadas, organize seu banco e gere provas e gabaritos individu
 
 ## Instalar
 
-A versão **0.4.1** é distribuída em MSI e ZIP **sem assinatura digital**, conforme autorizado pelo responsável. O Windows pode mostrar **Autor desconhecido**. Os arquivos SHA-256 permitem conferir a integridade dos downloads. Veja os detalhes em [SIGNING.md](SIGNING.md).
+A versão **0.4.2** é distribuída em MSI e ZIP **sem assinatura digital**, mantendo a distribuição da versão anterior. O Windows pode mostrar **Autor desconhecido**. Os arquivos SHA-256 permitem conferir a integridade dos downloads. Veja os detalhes em [SIGNING.md](SIGNING.md).
 
-Baixe o [instalador MSI do Test Craft 0.4.1](https://github.com/jorgewattes/test-craft/releases/download/v0.4.1/test-craft-0.4.1-windows-x64.msi), execute o instalador e abra **Test Craft** pelo menu Iniciar. Requer Windows 10/11 de 64 bits e suporte a OpenGL.
+Baixe o [instalador MSI do Test Craft 0.4.2](https://github.com/jorgewattes/test-craft/releases/download/v0.4.2/test-craft-0.4.2-windows-x64.msi), execute o instalador e abra **Test Craft** pelo menu Iniciar. Requer Windows 10/11 de 64 bits e suporte a OpenGL.
 
 A partir da versão 0.4.2, abra **Sobre e atualizações**, verifique a versão e clique em **Baixar e instalar**. O aplicativo baixa e confere o SHA-256, solicita autorização administrativa pelo Windows e fecha para instalar; ao concluir, abra-o novamente. Os dados ficam em **%LOCALAPPDATA%\Test Craft\data** e são preservados na atualização e desinstalação. Feche o aplicativo antes de copiar essa pasta para fazer backup.
 
@@ -66,6 +66,6 @@ cargo build --locked
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-release.ps1
 ```
 
-O script gera MSI, ZIP, SHA-256, relatório de assinatura e as notas da versão em **dist/**. A configuração `unsignedReleaseVersion: "0.4.1"` em **release-config.json** autoriza somente essa versão sem certificado, inclusive no GitHub Actions. Outras versões exigem assinatura por padrão; a preparação local sem certificado precisa de `-AllowUnsigned`. Configure a assinatura conforme [SIGNING.md](SIGNING.md). Tags `vX.Y.Z` correspondentes à versão do Cargo.toml publicam os pacotes com as notas da versão atual e validação ICE obrigatória do instalador.
+O script gera MSI, ZIP, SHA-256, relatório de assinatura e as notas da versão em **dist/**. A configuração `unsignedReleaseVersion: "0.4.2"` em **release-config.json** autoriza somente essa versão sem certificado, inclusive no GitHub Actions. Outras versões exigem assinatura por padrão; a preparação local sem certificado precisa de `-AllowUnsigned`. Configure a assinatura conforme [SIGNING.md](SIGNING.md). Tags `vX.Y.Z` correspondentes à versão do Cargo.toml publicam os pacotes com as notas da versão atual e validação ICE obrigatória do instalador.
 
 Licença [MIT](LICENSE). Dependências e créditos em [CREDITS.md](CREDITS.md).
