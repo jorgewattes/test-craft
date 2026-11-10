@@ -1,5 +1,8 @@
 $ErrorActionPreference = 'Stop'
 Set-Location (Split-Path $PSScriptRoot -Parent)
+# Use the same Windows PowerShell host as the application, including when CI runs pwsh.
+$windowsPowerShell = Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'
+if (-not (Test-Path -LiteralPath $windowsPowerShell)) { throw 'Windows PowerShell is required for updater checks.' }
 $testRoot = Join-Path $PWD ('checks/updater-' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $testRoot | Out-Null
 $payload = Join-Path $testRoot 'payload'
@@ -16,7 +19,7 @@ $result = Join-Path $testRoot 'result.txt'
 $job = Join-Path $testRoot 'job.json'
 $config = @{ package=$package; sha256=(Get-FileHash $package -Algorithm SHA256).Hash; executable=$executable; installed=$false; parentId=2147483647; result=$result }
 $config | ConvertTo-Json | Set-Content -LiteralPath $job -Encoding UTF8
-& (Join-Path $PSHOME 'powershell.exe') -NoProfile -ExecutionPolicy Bypass -File src/update-install.ps1 -Job $job -Quiet
+& $windowsPowerShell -NoProfile -ExecutionPolicy Bypass -File src/update-install.ps1 -Job $job -Quiet
 if ($LASTEXITCODE -ne 0) { throw 'Portable update failed.' }
 if ([IO.File]::ReadAllText($executable) -cne 'new executable') { throw 'Executable not replaced.' }
 if ([IO.File]::ReadAllText($executable + '.previous') -cne 'previous executable') { throw 'Backup not preserved.' }
@@ -25,7 +28,7 @@ if (-not ([IO.File]::ReadAllText($result).StartsWith('Atualizacao instalada'))) 
 # A modified package must never replace the current executable.
 $config.sha256 = '0' * 64
 $config | ConvertTo-Json | Set-Content -LiteralPath $job -Encoding UTF8
-& (Join-Path $PSHOME 'powershell.exe') -NoProfile -ExecutionPolicy Bypass -File src/update-install.ps1 -Job $job -Quiet
+& $windowsPowerShell -NoProfile -ExecutionPolicy Bypass -File src/update-install.ps1 -Job $job -Quiet
 if ($LASTEXITCODE -eq 0) { throw 'Corrupt update accepted.' }
 if ([IO.File]::ReadAllText($executable) -cne 'new executable') { throw 'Corrupt update changed executable.' }
 if (-not ([IO.File]::ReadAllText($result).StartsWith('Falha na atualizacao'))) { throw 'Failure not recorded.' }
