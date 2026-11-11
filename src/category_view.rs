@@ -1,5 +1,84 @@
 use crate::*;
 
+pub(crate) fn proof_category_picker(
+    ctx: &egui::Context,
+    search: &mut String,
+    focus: &mut bool,
+    index: &bank_view::BankIndex,
+    plan: &[(String, usize)],
+    validating: bool,
+) -> (Option<String>, bool) {
+    let mut selected = None;
+    let mut close = false;
+    let available = index.available_by_category(plan);
+    let response = egui::Modal::new(egui::Id::new("proof_category_picker")).show(ctx, |ui| {
+        ui.set_width(460.0_f32.min(ctx.screen_rect().width() - 70.));
+        ui.heading("Adicionar categoria à prova");
+        let input = ui.add(egui::TextEdit::singleline(search)
+            .id_salt("proof_category_search")
+            .hint_text("Buscar categoria ou subcategoria")
+            .desired_width(f32::INFINITY));
+        if *focus {
+            input.request_focus();
+            *focus = false;
+        }
+        small(ui, "O total entre parênteses inclui as subcategorias. Selecionar uma categoria principal adiciona suas subcategorias disponíveis.");
+        if validating {small(ui, "Validando questões; as quantidades serão atualizadas.");}
+        egui::ScrollArea::vertical().id_salt("proof_category_results")
+            .max_height((ctx.screen_rect().height() - 260.).clamp(100., 340.))
+            .show(ui, |ui| {
+                let mut found = false;
+                for cat in &index.categories {
+                    if !bank_view::category_search_matches(cat, search) {continue;}
+                    found = true;
+                    let count = available.get(cat).copied().unwrap_or(0);
+                    let total = index.category_counts.get(cat).copied().unwrap_or(0);
+                    let suffix = if count == 0 && plan.iter().any(|(p,_)|category_matches(p,cat)) {"já adicionada".into()} else {format!("{count} prontas para adicionar")};
+                    if ui.add_enabled(count > 0, egui::Button::new(format!("{} ({total}) · {suffix}", cat.replace('/', " / "))).wrap()).clicked() {
+                        selected = Some(cat.clone());
+                    }
+                }
+                if !found {small(ui, "Nenhuma categoria encontrada. Ajuste a busca ou crie uma categoria no banco.");}
+            });
+        close = ui.button("Fechar").clicked();
+    });
+    (selected, close || response.should_close())
+}
+
+#[cfg(test)]
+mod picker_tests {
+    use super::*;
+
+    #[test]
+    fn proof_category_search_keeps_focus_and_open_state_while_typing() {
+        let ctx = egui::Context::default();
+        let index = bank_view::BankIndex::new(&examples());
+        let mut search = String::new();
+        let mut focus = true;
+        for text in [None, Some("meca"), Some("nica")] {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    Vec2::new(1120., 740.),
+                )),
+                events: text
+                    .map(|text| vec![egui::Event::Text(text.into())])
+                    .unwrap_or_default(),
+                ..Default::default()
+            };
+            let _ = ctx.run(input, |ctx| {
+                let (selected, closed) =
+                    proof_category_picker(ctx, &mut search, &mut focus, &index, &[], false);
+                assert!(selected.is_none());
+                assert!(!closed, "Typing must not close the category picker");
+            });
+        }
+        assert_eq!(search, "mecanica");
+        assert!(bank_view::category_search_matches("Mecânica", &search));
+        assert!(!focus);
+    }
+}
+
 impl App {
     pub(crate) fn category_bulk_controls(&mut self, ui: &mut egui::Ui) {
         self.category_checked
@@ -45,6 +124,7 @@ impl App {
             &mut self.category_bulk_destination,
             &choices,
             false,
+            &self.index.category_counts,
         );
         let mut operation = None;
         ui.horizontal_wrapped(|ui| {
@@ -121,7 +201,7 @@ impl App {
             if count > 0 {
                 small(ui,"Escolha para onde mover todas as questões antes de excluir.");
                 let choices=self.index.categories.iter().filter(|p|!category_matches(p,&path)).cloned().collect::<Vec<_>>();
-                category_dropdown(ui,"delete_category_destination",&mut self.category_delete_destination,&choices,false);
+                category_dropdown(ui,"delete_category_destination",&mut self.category_delete_destination,&choices,false,&self.index.category_counts);
                 if choices.is_empty(){ui.colored_label(ERROR,"Crie uma categoria de destino antes de excluir esta categoria.");}
             }
             if let Some(error)=&self.category_error{ui.colored_label(ERROR,error);}

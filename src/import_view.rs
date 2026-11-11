@@ -142,6 +142,7 @@ impl App {
             rule(ui);
             ui.label(R::new("Distribuição por categoria").strong());
             small(ui, "Altere o destino de cada categoria antes de importar. Também é possível ajustar cada questão abaixo.");
+            let import_counts = bank_view::category_counts(&review.bank);
             let mut counts: BTreeMap<String, (usize, usize)> = categories(&review.bank).into_iter().map(|c| (c, (0, 0))).collect();
             for q in &review.bank.questions {
                 let c = counts.entry(q.category.clone()).or_default();
@@ -151,13 +152,13 @@ impl App {
             egui::ScrollArea::vertical().id_salt("import_categories").max_height(180.).show(ui, |ui| {
                 for (path, (count, errors)) in counts {
                     ui.horizontal(|ui| {
-                        ui.label(if path.is_empty() { "Sem categoria (revisar)".into() } else { path.replace('/', " / ") });
+                        ui.label(if path.is_empty() { "Sem categoria (revisar)".into() } else { format!("{} ({})",path.replace('/', " / "),import_counts.get(&path).copied().unwrap_or(0)) });
                         small(ui, format!("{count} questões · {errors} com erro"));
                     });
                     ui.push_id(&path, |ui| {
                         let destination=review.destinations.entry(path.clone()).or_insert(path.clone());
                         let choices=categories(&review.bank).into_iter().chain(self.index.categories.clone()).collect::<BTreeSet<_>>().into_iter().collect::<Vec<_>>();
-                        category_dropdown(ui,"import_destination",destination,&choices,false);
+                        category_dropdown(ui,"import_destination",destination,&choices,false,&self.index.category_counts);
                         ui.add(egui::TextEdit::singleline(destination).hint_text("Ou digite uma nova categoria / subcategoria").desired_width(f32::INFINITY));
                     });
                 }
@@ -213,6 +214,7 @@ impl App {
                         self.sync_plan();
                         self.category = "Todas".into();
                         self.search.clear();
+                        self.question_filter = bank_view::QuestionFilter::All;
                         self.notify(
                             format!(
                                 "{count} questões importadas e salvas nas categorias escolhidas."
@@ -234,6 +236,48 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn imported_subcategories_are_selectable_from_the_parent_and_generate_exams() {
+        let folder = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("checks/import-exam-044");
+        std::fs::create_dir_all(&folder).unwrap();
+        let source = folder.join("questions.xml");
+        std::fs::write(&source, r#"<quiz><question type="category"><category><text>$course$/Importadas/Subcategoria</text></category></question><question type="multichoice"><name><text>Importada</text></name><questiontext><text>Escolha</text></questiontext><answer fraction="100"><text>A</text></answer><answer fraction="0"><text>B</text></answer></question></quiz>"#).unwrap();
+        let review = read_import(vec![source], 100).unwrap();
+        assert!(review.errors.is_empty());
+        let mut bank = Bank {
+            version: 1,
+            questions: vec![],
+            category_labels: vec![],
+        };
+        merge_import(&mut bank, review.bank, &BTreeSet::new(), true).unwrap();
+        let mut index = bank_view::BankIndex::new(&bank);
+        let validator = bank_view::Validator::new(egui::Context::default());
+        let generation = validator.submit(&bank);
+        let result = validator
+            .results
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .unwrap();
+        assert_eq!(result.generation, generation);
+        assert!(result.error.is_none());
+        let question = &bank.questions[index.positions[&result.id]];
+        assert_eq!(question.status, QuestionStatus::Ready);
+        *index
+            .ready_counts
+            .entry(question.category.clone())
+            .or_default() += 1;
+        assert_eq!(index.category_counts["Importadas"], 1);
+        assert_eq!(index.available_by_category(&[])["Importadas"], 1);
+        assert!(!index.available_by_category(&[]).contains_key("Importada"));
+        let mut plan = vec![];
+        index.add_category_tree("Importadas", &mut plan);
+        index.add_category_tree("Importadas/Subcategoria", &mut plan);
+        assert_eq!(plan, [("Importadas/Subcategoria".into(), 1)]);
+        assert!(!index
+            .available_by_category(&plan)
+            .contains_key("Importadas"));
+        let batch = generate(&bank, &plan, "Ana", 1, "Prova", "", "", "", "").unwrap();
+        assert_eq!(batch.students[0].questions.len(), 1);
+    }
     #[test]
     fn multiple_files_remap_ids_and_categories_without_partial_import() {
         let folder = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("checks/multi-import-042");

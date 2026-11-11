@@ -1,3 +1,13 @@
+# Test Craft 0.4.4
+
+- Questões importadas em subcategorias disponíveis na criação de prova ao selecionar a categoria principal, sem duplicação das já adicionadas.
+- Totais entre parênteses nas listas de categorias, incluindo as subcategorias; disponibilidade de questões prontas e válidas informada separadamente.
+- Grade de alunos com colagem de várias linhas/colunas, seleção da coluna de nomes, remoção de linhas/colunas extras e opção de cabeçalho, preservada nas preferências.
+- Seleção de questões mais compacta no banco e na prova, com ações em menu e lista de categorias com rolagem.
+- Captura de verificação solicitada após três quadros, com encerramento em 15 segundos se não houver resposta; protocolo limita tentativas repetidas do rebuild_check.
+- Busca de categorias com foco estável e filtros por situação; exportação Moodle XML de questões prontas e válidas, com valores fixos, imagens e XML por aluno.
+- MSI e ZIP sem assinatura digital, com SHA-256 e validação ICE obrigatória, mantendo a distribuição da versão anterior.
+
 # Test Craft 0.4.3
 
 - Escolha e busca de categorias e subcategorias ao montar a prova, com remoção e ordenação dos blocos.

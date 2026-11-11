@@ -1,4 +1,4 @@
-use crate::model::{categories, category_matches, validate, Bank, Question};
+use crate::model::{categories, category_matches, validate, Bank, Question, QuestionStatus};
 use std::{
     collections::BTreeMap,
     sync::{
@@ -9,6 +9,61 @@ use std::{
 
 pub const PAGE_SIZE: usize = 50;
 
+pub fn category_counts(bank: &Bank) -> BTreeMap<String, usize> {
+    let mut counts = BTreeMap::new();
+    for q in &bank.questions {
+        let mut path = q.category.as_str();
+        loop {
+            *counts.entry(path.to_owned()).or_default() += 1;
+            match path.rsplit_once('/') {
+                Some((parent, _)) => path = parent,
+                None => break,
+            }
+        }
+    }
+    counts
+}
+
+pub fn category_search_matches(path: &str, query: &str) -> bool {
+    fn normalized(text: &str) -> String {
+        text.to_lowercase()
+            .chars()
+            .map(|c| match c {
+                'á' | 'à' | 'â' | 'ã' => 'a',
+                'é' | 'ê' => 'e',
+                'í' => 'i',
+                'ó' | 'ô' | 'õ' => 'o',
+                'ú' | 'ü' => 'u',
+                'ç' => 'c',
+                _ => c,
+            })
+            .collect()
+    }
+    let path = normalized(path);
+    normalized(query)
+        .split_whitespace()
+        .all(|term| path.contains(term))
+}
+
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub enum QuestionFilter {
+    #[default]
+    All,
+    Ready,
+    Error,
+    Draft,
+}
+impl QuestionFilter {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::All => "Todas",
+            Self::Ready => "Prontas",
+            Self::Error => "Com erro",
+            Self::Draft => "Rascunhos",
+        }
+    }
+}
+
 /// Lightweight lookup/search data; never clone images or rebuild text on repaint.
 pub struct BankIndex {
     pub positions: BTreeMap<u64, usize>,
@@ -16,24 +71,13 @@ pub struct BankIndex {
     pub category_counts: BTreeMap<String, usize>,
     pub ready_counts: BTreeMap<String, usize>,
     search: Vec<String>,
-    filter: Option<(String, String)>,
+    filter: Option<(String, String, QuestionFilter)>,
     matches: Arc<Vec<usize>>,
 }
 impl BankIndex {
     pub fn new(bank: &Bank) -> Self {
-        let mut category_counts = BTreeMap::new();
-        for q in &bank.questions {
-            let mut path = q.category.as_str();
-            loop {
-                *category_counts.entry(path.to_owned()).or_default() += 1;
-                match path.rsplit_once('/') {
-                    Some((parent, _)) => path = parent,
-                    None => break,
-                }
-            }
-        }
         Self {
-            category_counts,
+            category_counts: category_counts(bank),
             ready_counts: BTreeMap::new(),
             positions: bank
                 .questions
@@ -51,8 +95,51 @@ impl BankIndex {
             matches: Arc::new(Vec::new()),
         }
     }
-    pub fn filter(&mut self, bank: &Bank, category: &str, search: &str) -> (Arc<Vec<usize>>, bool) {
-        let key = (category.to_owned(), search.to_lowercase());
+    pub fn invalidate_filter(&mut self) {
+        self.filter = None;
+    }
+    pub fn available_by_category(&self, plan: &[(String, usize)]) -> BTreeMap<String, usize> {
+        let added: std::collections::BTreeSet<_> = plan.iter().map(|(path, _)| path).collect();
+        let mut counts = BTreeMap::new();
+        for (path, count) in &self.ready_counts {
+            if added.contains(path) {
+                continue;
+            }
+            let mut path = path.as_str();
+            loop {
+                *counts.entry(path.to_owned()).or_default() += count;
+                match path.rsplit_once('/') {
+                    Some((parent, _)) => path = parent,
+                    None => break,
+                }
+            }
+        }
+        counts
+    }
+    /// Expand a parent into disjoint direct-category pools. Existing plan rows
+    /// keep their quantities and no question can be sampled twice via a parent.
+    pub fn add_category_tree(&self, root: &str, plan: &mut Vec<(String, usize)>) {
+        let mut added: std::collections::BTreeSet<_> =
+            plan.iter().map(|(path, _)| path.clone()).collect();
+        for path in &self.categories {
+            if category_matches(path, root)
+                && self.ready_counts.get(path).copied().unwrap_or(0) > 0
+                && added.insert(path.clone())
+            {
+                plan.push((path.clone(), 1));
+            }
+        }
+    }
+    pub fn filter(
+        &mut self,
+        bank: &Bank,
+        category: &str,
+        search: &str,
+        status: QuestionFilter,
+        errors: &BTreeMap<u64, String>,
+        pending: &std::collections::BTreeSet<u64>,
+    ) -> (Arc<Vec<usize>>, bool) {
+        let key = (category.to_owned(), search.trim().to_lowercase(), status);
         let changed = self.filter.as_ref() != Some(&key);
         if changed {
             self.matches = Arc::new(
@@ -62,6 +149,18 @@ impl BankIndex {
                     .filter(|(i, q)| {
                         (category == "Todas" || category_matches(&q.category, category))
                             && self.search[*i].contains(&key.1)
+                            && match status {
+                                QuestionFilter::All => true,
+                                QuestionFilter::Draft => q.status == QuestionStatus::Draft,
+                                QuestionFilter::Ready => {
+                                    q.status == QuestionStatus::Ready
+                                        && !pending.contains(&q.id)
+                                        && !errors.contains_key(&q.id)
+                                }
+                                QuestionFilter::Error => {
+                                    !pending.contains(&q.id) && errors.contains_key(&q.id)
+                                }
+                            }
                     })
                     .map(|(i, _)| i)
                     .collect(),
@@ -145,7 +244,14 @@ mod tests {
         let mut index = BankIndex::new(&bank);
         for category in ["Todas", "Física", "Física/Óptica", "Ausente"] {
             for search in ["", "FÍSICA", "velocidade", "Ausente"] {
-                let (actual, _) = index.filter(&bank, category, search);
+                let (actual, _) = index.filter(
+                    &bank,
+                    category,
+                    search,
+                    QuestionFilter::All,
+                    &BTreeMap::new(),
+                    &Default::default(),
+                );
                 let expected: Vec<_> = bank
                     .questions
                     .iter()
@@ -159,14 +265,109 @@ mod tests {
                     .map(|(i, _)| i)
                     .collect();
                 assert_eq!(*actual, expected);
-                let (same, changed) = index.filter(&bank, category, search);
+                let (same, changed) = index.filter(
+                    &bank,
+                    category,
+                    search,
+                    QuestionFilter::All,
+                    &BTreeMap::new(),
+                    &Default::default(),
+                );
                 assert!(!changed);
                 assert!(Arc::ptr_eq(&actual, &same));
             }
         }
         bank.questions.remove(0);
         let mut index = BankIndex::new(&bank);
-        assert!(index.filter(&bank, "Física", "").0.is_empty());
+        assert!(index
+            .filter(
+                &bank,
+                "Física",
+                "",
+                QuestionFilter::All,
+                &BTreeMap::new(),
+                &Default::default()
+            )
+            .0
+            .is_empty());
+    }
+    #[test]
+    fn status_filters_combine_with_search_and_follow_validation_updates() {
+        let mut bank = crate::model::examples();
+        bank.questions.truncate(3);
+        bank.questions[1].status = QuestionStatus::Draft;
+        bank.questions[2].text.clear();
+        let mut errors = BTreeMap::from([(bank.questions[2].id, "Enunciado vazio".into())]);
+        let mut pending = std::collections::BTreeSet::from([bank.questions[0].id]);
+        let mut index = BankIndex::new(&bank);
+        assert!(index
+            .filter(&bank, "Todas", "", QuestionFilter::Ready, &errors, &pending)
+            .0
+            .is_empty());
+        assert_eq!(
+            *index
+                .filter(&bank, "Todas", "", QuestionFilter::Draft, &errors, &pending)
+                .0,
+            vec![1]
+        );
+        assert_eq!(
+            *index
+                .filter(&bank, "Todas", "", QuestionFilter::Error, &errors, &pending)
+                .0,
+            vec![2]
+        );
+        assert!(index
+            .filter(
+                &bank,
+                "Ausente",
+                "",
+                QuestionFilter::Error,
+                &errors,
+                &pending
+            )
+            .0
+            .is_empty());
+        assert!(index
+            .filter(
+                &bank,
+                "Todas",
+                "não existe",
+                QuestionFilter::Draft,
+                &errors,
+                &pending
+            )
+            .0
+            .is_empty());
+        pending.clear();
+        index.invalidate_filter();
+        assert_eq!(
+            *index
+                .filter(&bank, "Todas", "", QuestionFilter::Ready, &errors, &pending)
+                .0,
+            vec![0]
+        );
+        errors.clear();
+        index.invalidate_filter();
+        assert!(index
+            .filter(&bank, "Todas", "", QuestionFilter::Error, &errors, &pending)
+            .0
+            .is_empty());
+    }
+    #[test]
+    fn category_search_accepts_accents_spaces_and_parent_paths() {
+        assert!(category_search_matches(
+            "Ciências/Física/Óptica",
+            "  FISICA optica  "
+        ));
+        assert!(category_search_matches(
+            "Ciências/Física/Óptica",
+            "Ciências"
+        ));
+        assert!(category_search_matches("Ciências/Física/Óptica", ""));
+        assert!(!category_search_matches(
+            "Ciências/Física/Óptica",
+            "Química"
+        ));
     }
     #[test]
     fn validator_returns_latest_revision_and_removes_fixed_errors() {

@@ -662,6 +662,11 @@ pub fn export(batch: &Batch, base: &Path) -> Result<PathBuf, String> {
         for (i, s) in batch.students.iter().enumerate() {
             let prefix = format!("{:03}_{}", i + 1, safe(&s.name));
             fs::write(
+                folder.join(format!("moodle_{prefix}.xml")),
+                crate::moodle::instances_xml(&s.questions, &[])?,
+            )
+            .map_err(|e| e.to_string())?;
+            fs::write(
                 folder.join(format!("prova_{prefix}.pdf")),
                 exam(batch, s).bytes(),
             )
