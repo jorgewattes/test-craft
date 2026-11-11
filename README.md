@@ -66,7 +66,7 @@ Se o login expirar, abra novamente o atalho. Não envie senhas ou tokens pelo ch
 
 No Craft Anything, o perfil **Codex Caderno GitHub** usa o executor do Craft (`build_command_run`) com seu usuário habitual do Windows. Se o terminal isolado informar **CodexSandboxOffline**, o Codex deve repetir a verificação por esse executor antes de solicitar um novo login. Se o executor estiver indisponível, abra o Codex ou o PowerShell com seu usuário habitual do Windows.
 
-O projeto fica em **C:\dev\moodtest2\app**, branch **main**, versão **0.4.4** e tag planejada **v0.4.4**, no repositório **jorgewattes/test-craft**. Confira a conexão antes de enviar; a publicação só está concluída quando o workflow da tag terminar e a Release com MSI e ZIP estiver disponível no GitHub. A validação ICE do MSI é obrigatória no workflow; pacotes locais gerados com `-SkipMsiValidation` não substituem essa validação.
+O projeto fica em **C:\dev\moodtest2\app**, branch **main**, versão **0.4.4**, no repositório **jorgewattes/test-craft**. A [Release v0.4.4](https://github.com/jorgewattes/test-craft/releases/tag/v0.4.4) foi publicada em 11/11/2026, com MSI, ZIP e seus arquivos SHA-256, após a conclusão do workflow da tag. Confira a conexão antes de novos envios; a publicação só está concluída quando o workflow da tag terminar e a Release com MSI e ZIP estiver disponível no GitHub. A validação ICE do MSI é obrigatória no workflow; pacotes locais gerados com `-SkipMsiValidation` não substituem essa validação.
 
 Com Rust e Visual Studio Build Tools instalados:
 
