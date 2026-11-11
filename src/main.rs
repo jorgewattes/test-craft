@@ -163,6 +163,26 @@ fn category_dropdown(
             category_options(ui, selected, choices);
         });
 }
+fn position_button(ui: &mut egui::Ui, up: bool, enabled: bool, label: &str) -> egui::Response {
+    let response = ui.add_enabled(enabled, egui::Button::new("").min_size(Vec2::splat(28.)));
+    let center = response.rect.center();
+    let direction = if up { -1. } else { 1. };
+    let tip = center + Vec2::new(0., direction * 6.);
+    let stroke = Stroke::new(
+        1.7f32,
+        if enabled {
+            TEAL
+        } else {
+            C::from_rgb(180, 190, 195)
+        },
+    );
+    let painter = ui.painter();
+    painter.line_segment([center - Vec2::new(0., direction * 6.), tip], stroke);
+    painter.line_segment([tip, tip + Vec2::new(-4., -direction * 4.)], stroke);
+    painter.line_segment([tip, tip + Vec2::new(4., -direction * 4.)], stroke);
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, label));
+    response.on_hover_text(label)
+}
 fn category_settings(ui: &mut egui::Ui) -> egui::Response {
     let (r, response) = ui.allocate_exact_size(Vec2::splat(38.), egui::Sense::click());
     ui.painter()
@@ -348,6 +368,8 @@ struct Setup {
     plan: Vec<(String, usize)>,
     #[serde(default)]
     same_questions: bool,
+    #[serde(default)]
+    question_order: Vec<usize>,
 }
 impl Default for Setup {
     fn default() -> Self {
@@ -362,6 +384,7 @@ impl Default for Setup {
             seed: 2026,
             plan: vec![],
             same_questions: false,
+            question_order: vec![],
         }
     }
 }
@@ -407,6 +430,7 @@ struct App {
     category_bulk_destination: String,
     category_bulk_delete: bool,
     category_search: String,
+    proof_category_search: String,
     category_delete: Option<String>,
     category_delete_destination: String,
     import_review: Option<ImportReview>,
@@ -535,6 +559,7 @@ impl App {
             category_bulk_destination: String::new(),
             category_bulk_delete: false,
             category_search: String::new(),
+            proof_category_search: String::new(),
             category_delete: None,
             category_delete_destination: String::new(),
             import_review: None,
@@ -589,11 +614,11 @@ impl App {
     }
     fn sync_plan(&mut self) {
         let cats = self.index.categories.clone();
+        let previous = self.setup.plan.clone();
         self.setup.plan.retain(|(c, _)| cats.contains(c));
-        for c in cats {
-            if !self.setup.plan.iter().any(|p| p.0 == c) {
-                self.setup.plan.push((c, 0));
-            }
+        self.setup.plan.retain(|(_, n)| *n > 0);
+        if self.setup.plan != previous {
+            self.setup.question_order.clear();
         }
     }
     fn refresh_history(&mut self) {
@@ -1263,6 +1288,11 @@ impl App {
         ) {
             Ok(mut b) => {
                 b.logo = self.setup.logo.clone();
+                if !self.setup.question_order.is_empty()
+                    && !b.apply_question_order(&self.setup.question_order)
+                {
+                    self.setup.question_order.clear();
+                }
                 self.batch = Some(b);
                 self.student_preview = 0;
                 self.notify(
@@ -1296,6 +1326,8 @@ impl App {
         let side = (w * 0.43).min(440.);
         let content_height = ui.available_height();
         let mut changed = false;
+        let previous_plan = self.setup.plan.clone();
+        let mut question_move = None;
         ui.horizontal_top(|ui|{
             ui.allocate_ui_with_layout(Vec2::new(w-side-22.,content_height),egui::Layout::top_down(egui::Align::Min),|ui|{
                 egui::ScrollArea::vertical().id_salt("exam_setup").show(ui,|ui|{
@@ -1319,22 +1351,46 @@ impl App {
                     });ui.add_space(12.);
                     card().show(ui,|ui|{
                         ui.label(R::new("2   Questões por categoria").size(16.).strong());small(ui,"Sorteio sem repetir questões dentro de cada prova.");ui.add_space(8.);
-                        changed |= ui.checkbox(&mut self.setup.same_questions,"Manter as mesmas questões para todos os alunos").changed();
+                        small(ui,"Como selecionar as questões");
+                        changed |= ui.radio_value(&mut self.setup.same_questions,false,"Sorteio por aluno — questões independentes").changed();
+                        changed |= ui.radio_value(&mut self.setup.same_questions,true,"Sorteio por prova — mesmas questões para todos").changed();
                         small(ui,if self.setup.same_questions {"Mantém questões e alternativas na mesma ordem; sorteia os valores por aluno."} else {"Sorteia questões independentemente para cada aluno; pode haver coincidências."});
                         small(ui,"Disponíveis: somente questões prontas e válidas. Rascunhos, erros e validações pendentes ficam fora.");
-                        let len=self.setup.plan.len();let mut mv=None;
-                        egui::Grid::new("category_plan").spacing([14.,10.]).show(ui,|ui|{
-                            for s in ["Categoria","Disponíveis","Sortear","",""]{small(ui,s)}ui.end_row();
+                        ui.add_space(8.);
+                        ui.menu_button("+ Adicionar categoria ou subcategoria", |ui| {
+                            ui.set_max_width(420.);
+                            ui.add(egui::TextEdit::singleline(&mut self.proof_category_search).hint_text("Buscar categoria ou subcategoria").desired_width(350.));
+                            small(ui,"Cada categoria inclui apenas suas próprias questões.");
+                            let query=self.proof_category_search.to_lowercase();
+                            egui::ScrollArea::vertical().id_salt("proof_category_menu").max_height(240.).show(ui, |ui| {
+                                let mut found=false;
+                                for cat in &self.index.categories {
+                                    if self.setup.plan.iter().any(|p| &p.0==cat) || !cat.to_lowercase().contains(&query) {continue;}
+                                    found=true;
+                                    let count=self.index.ready_counts.get(cat).copied().unwrap_or(0);
+                                    if ui.add_enabled(count>0,egui::Button::new(format!("{} ({count} disponíveis)",cat.replace('/'," / "))).wrap()).clicked() {
+                                        self.setup.plan.push((cat.clone(),1));changed=true;ui.close();
+                                    }
+                                }
+                                if !found {small(ui,"Nenhuma categoria disponível para adicionar.");}
+                            });
+                        });
+                        let len=self.setup.plan.len();let mut mv=None;let mut remove=None;
+                        let category_width=(ui.available_width()-270.).clamp(90.,180.);
+                        egui::Grid::new("category_plan").spacing([8.,10.]).show(ui,|ui|{
+                            for s in ["Categoria","Disponíveis","Sortear","","",""]{small(ui,s)}ui.end_row();
                             for (i,(cat,n)) in self.setup.plan.iter_mut().enumerate(){
                                 let count=self.index.ready_counts.get(cat).copied().unwrap_or(0);
-                                ui.label(cat.as_str());small(ui,count.to_string());let limit=if self.pending_validation.is_empty(){count}else{count.max(*n)};changed|=ui.add_enabled(self.pending_validation.is_empty(),egui::DragValue::new(n).range(0..=limit)).changed();
-                                if ui.add_enabled(i>0,egui::Button::new("↑").min_size(Vec2::splat(30.))).clicked(){mv=Some((i,i-1))}
-                                if ui.add_enabled(i+1<len,egui::Button::new("↓").min_size(Vec2::splat(30.))).clicked(){mv=Some((i,i+1))}
+                                ui.add_sized([category_width,28.],egui::Label::new(cat.replace('/'," / ")).wrap());small(ui,count.to_string());let limit=if self.pending_validation.is_empty(){count}else{count.max(*n)};changed|=ui.add_enabled(self.pending_validation.is_empty(),egui::DragValue::new(n).range(0..=limit)).changed();
+                                if position_button(ui,true,i>0,"Adiantar categoria").clicked(){mv=Some((i,i-1))}
+                                if position_button(ui,false,i+1<len,"Postergar categoria").clicked(){mv=Some((i,i+1))}
+                                if ui.button("×").on_hover_text("Retirar categoria desta prova").clicked(){remove=Some(i);}
                                 ui.end_row();
                             }
                         });
                         if let Some((a,b))=mv{self.setup.plan.swap(a,b);changed=true;}
-                        if self.setup.plan.is_empty(){small(ui,"Adicione questões ao banco primeiro.");}
+                        if let Some(i)=remove{self.setup.plan.remove(i);changed=true;}
+                        if self.setup.plan.is_empty(){small(ui,"Adicione as categorias ou subcategorias que serão usadas nesta prova.");}
                         rule(ui);ui.label(R::new(format!("{} questões por aluno",self.setup.plan.iter().map(|p|p.1).sum::<usize>())).strong().color(TEAL));
                     });ui.add_space(12.);
                     card().show(ui,|ui|{
@@ -1363,7 +1419,16 @@ impl App {
                                 small(ui,format!("Turma: {}   ·   Data: {}",batch.class_name,batch.date));
                                 ui.separator();ui.label(R::new(format!("Aluno(a): {}",batch.students[self.student_preview].name)).strong());
                             });rule(ui);
-                            for (i,q) in batch.students[self.student_preview].questions.iter().enumerate(){ui.label(R::new(format!("Questão {}",i+1)).strong());Self::show_instance(ui,q,false);ui.add_space(15.);}
+                            small(ui,"Use as setas ao lado de cada questão para mudar sua posição em todas as versões.");
+                            let count=batch.students[self.student_preview].questions.len();
+                            for (i,q) in batch.students[self.student_preview].questions.iter().enumerate(){
+                                ui.push_id(("question_position",i),|ui| {ui.horizontal(|ui| {
+                                    ui.label(R::new(format!("Questão {}",i+1)).strong());
+                                    if position_button(ui,true,i>0,"Adiantar questão em todas as versões").clicked(){question_move=Some((i,i-1));}
+                                    if position_button(ui,false,i+1<count,"Postergar questão em todas as versões").clicked(){question_move=Some((i,i+1));}
+                                });});
+                                Self::show_instance(ui,q,false);ui.add_space(15.);
+                            }
                             rule(ui);small(ui,"GABARITO DESTA VERSÃO");
                             for (i,q) in batch.students[self.student_preview].questions.iter().enumerate(){ui.label(R::new(format!("Q{}   {}",i+1,pdf::letters(q))).color(TEAL));}
                         }else{
@@ -1379,9 +1444,19 @@ impl App {
                 });
             });
         });
+        if self.setup.plan != previous_plan {
+            self.setup.question_order.clear();
+        }
         if changed {
             self.batch = None;
             self.notify("Dados alterados. Confira uma nova prévia.", false);
+        } else if let Some((from, to)) = question_move {
+            if let Some(batch) = &mut self.batch {
+                if batch.move_question(from, to) {
+                    self.setup.question_order = batch.question_order.clone();
+                    self.notify("Posição atualizada em todas as provas e gabaritos.", false);
+                }
+            }
         }
     }
     fn open_folder(&mut self, p: PathBuf) {
@@ -1447,9 +1522,9 @@ impl App {
                             })
                     }) =>
             {
+                self.setup.same_questions = b.same_questions;
                 if !b.plan.is_empty() {
                     self.setup.plan = b.plan.clone();
-                    self.setup.same_questions = b.same_questions;
                 } else {
                     let mut counts = std::collections::BTreeMap::new();
                     for q in &b.students[0].questions {
@@ -1462,6 +1537,7 @@ impl App {
                     self.setup.plan = counts.into_iter().collect();
                 }
                 self.sync_plan();
+                self.setup.question_order = b.question_order.clone();
                 self.setup.title = b.title.clone();
                 self.setup.seed = b.seed;
                 self.setup.names = b

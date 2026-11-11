@@ -1,3 +1,12 @@
+# Test Craft 0.4.3
+
+- Escolha e busca de categorias e subcategorias ao montar a prova, com remoção e ordenação dos blocos.
+- Ordenação das questões na prévia, aplicada a todas as versões, aos PDFs e aos gabaritos.
+- Opções de sorteio por aluno ou por prova com explicações mais claras.
+- Importação Moodle preserva imagens incorporadas no enunciado e nas alternativas, incluindo subpastas, URLs codificadas e base64; imagens ausentes geram aviso para revisão.
+- Importação de variáveis segue o escopo correto do XML e mantém os valores anteriores quando uma definição repetida está vazia.
+- MSI e ZIP sem assinatura digital, com checksums SHA-256 e validação ICE obrigatória, mantendo o formato de distribuição anterior.
+
 # Test Craft 0.4.2
 
 - Publicação de MSI e ZIP sem assinatura digital, com checksums SHA-256 e validação ICE obrigatória.

@@ -1,5 +1,67 @@
 # Regras verificadas no original
 
+## Conferência atual: escopo XML e datasets vazios (10/11/2026)
+
+`core_session_show` confirmou Deep mode; `core_target_open` abriu novamente
+`C:/dev/MoodTest/MoodTest.py` (83.212 bytes, SHA-256
+`c2b9ff9719e5ca4b7c837a22da5eae6a3bd2811d9eb17ef6895a730c038f1541`).
+Foram aguardadas sequencialmente 3 buscas `native_strings_find` para nomes,
+configurações e mensagens, 6 consultas `native_name_xrefs_list` e os 27
+`native_function_pseudocode` listados no [registro das ferramentas](checks/deep-dataset-scope-tools.json).
+**Todas retornaram `not_supported: Unknown file magic`. Não houve decompilação
+nativa bem-sucedida: o original fornecido é fonte Python, sem endereços nativos.**
+Os números abaixo são offsets reais de bytes do fonte; `native_address=null`.
+
+As referências foram seguidas no fonte. O [mapa desta conferência](checks/source-dataset-scope-review.json)
+registra 99 definições (incluindo funções internas), suas chamadas e o texto
+integral. A importação segue `App.load_xmls → carregar_questoes`; a geração
+segue `App.gerar_provas → App._selecionar_questoes_por_plano / Question.instantiate →
+Question._render_segments → Question._processar_texto → _replace_calculated_blocks →
+avaliar_expressao_com_variaveis → avaliar_expressao → _preprocess_expr / _eval_ast`;
+a exportação segue `Exam.export_pdf → Exam._story → add_blank_answer_tables`.
+
+| Funções e offsets no fonte | Valores, fórmulas e regras observadas |
+|---|---|
+| `_preprocess_expr` `0x128e`; `avaliar_expressao` `0x13bd`; `_eval_ast` `0xc7b` | Trim → `^` por `**` → `ln(` por `log(` → remover espaços → AST. Operações +, −, ×, ÷, potência e sinais; sqrt, abs, sin, cos, tan, log, log10, exp; constantes pi/e, com contexto precedendo constantes. `2^3^2=512`, `-2^2=-4`. |
+| `_extract_variable_names` `0x18c2`; `avaliar_expressao_com_variaveis` `0x1aa2`; `contar_casas_decimais` `0x1de2` | Substituir chaves pelo valor antes do parse, sem adicionar parênteses. Com x=−2, `{x}^2=-4` e `({x})^2=4`. Contagem decimal científica: `max(casas(base)−expoente,0)`; precisão dos usados retorna máximo, padrão 2. |
+| `formatar_numero_pt` `0x1501`; `remover_decimais_nulos` `0x17ac`; `_replace_calculated_blocks` `0x3984`; `Question._processar_texto` `0x8f5a` | Blocos e variáveis exibem 2 casas com `Decimal(str(x)).quantize(10^-2, ROUND_HALF_UP)`, milhar ponto, decimal vírgula e inteiros sem fração zero. Limpa delimitadores matemáticos e símbolos ohm. O original preserva blocos inválidos; o produto exige correção antes da geração. |
+| `carregar_questoes` `0xc549`, caminho `0xcbee`, guarda `0xcf9b`, atribuição `0xcfc0` | Apenas filhos diretos de `dataset_definitions/dataset_definition/dataset_items/dataset_item/value`; primeiro `value` do item. Definição sem valores aceitos é ignorada e não apaga uma anterior. Definição posterior com valores substitui a anterior, mantendo posição inicial e entradas repetidas. **Aplicado nesta correção.** |
+| `_parse_correct_indices` `0xc307` | Toda alternativa com `float(fraction)>0` é correta; valor ausente/inválido assume zero. O produto ainda sinaliza pontuações inválidas e rejeita não finitos. |
+| `Dataset.sample` `0x832c`; `Question.instantiate` `0x888e`; `Question._render_segments` `0x8b65` | Sorteio independente por variável, `P(v)=contagem(v)/n`; embaralhar alternativas e remapear índices corretos. Renderizar textos preservando imagens. |
+| `App._selecionar_questoes_por_plano` `0x12aa0`; `App.gerar_provas` `0x13504` | Selecionar sem reposição por categoria e aluno, em ordem do plano. Original limita quantidade à disponibilidade e prioriza questões com imagens presentes; produto exige questões prontas/válidas e permite modo comum solicitado. `0x13504` é o início real de `gerar_provas`; offsets de chamadas internos dos registros antigos não são seu início. |
+| `_collect_files` `0x98c9`; `MoodleHTMLParser._resolve_image` `0xaebb` | Arquivos incorporados por nome/caminho, marcadores `@@PLUGINFILE@@`, base64 e aviso de imagem ausente. A reconstrução mantém os formatos locais PNG/JPEG e as melhorias de importação já solicitadas. |
+| `letters_for` `0x7c98`; `indices_para_letras` `0xd0f7`; `exportar_gabarito_pdf` `0xd1ae` | Letras minúsculas, depois aa/ab etc.; respostas separadas por `/`, ausência `-`; consolidar respostas de cada aluno. Produto limita alternativas a 8. |
+| `add_blank_answer_tables` `0x7e27`; `Exam._story` `0x9347` | Blocos de 15 respostas, duas linhas, rótulos Q01 etc., grade preta 0,75 pt, fundo cinza no cabeçalho, antes das questões. |
+| `Exam.export_pdf` `0x95d0`; `App._exportar_pdf_unico` `0x14100` | A4: `210/25,4×72=595,2755905511812 pt` e `297/25,4×72=841,8897637795276 pt`; margem original `2/2,54×72=56,69291338582677 pt`. Produto preserva a margem de 1,5 cm solicitada (`42,51968503937008 pt`). |
+| `App._sanitizar_nome` `0x1340f` | Trim, substituir sequências de `\\/:*?"<>|` por `_`, depois sequências de espaços por `_`, fallback `aluno`. Produto mantém prefixo numérico e limite de 90 caracteres. |
+
+Evidências de bytes: definição `ev_3d27fe9407dab3954ad2b283bd9329eb17b38366acc3390b1a97772b8c784764`;
+caminho XML `ev_1189e0e8f734bcfcc384b07ec4ba4f47285212ea0555cfea532680cc4ef828d7`;
+guarda `ev_e39efb51ca3f3e103c694b4b884a6593c47f02f264899eda86ea10c91ac62883`;
+atribuição `ev_ea6653fec299c6710e456cc7f4460f5a0d6044fc116bd8a95369638b8dfeacd5`.
+
+Os nove casos em `mechanics.json::original.dataset_scope_cases` foram obtidos
+executando somente três definições isoladas do fonte original, com dependências
+de imagens e objetos substituídas por estruturas inertes; não se importou o módulo,
+abriu GUI ou executou instalação. [Script de reprodução](checks/review-original-dataset-scope.py).
+O teste `dataset_scope_matches_original_through_generation` falhou antes da correção:
+o XML esperado `[2.5, 2.5, 4]` produzia `[]`, que virava intervalo sintético de zero.
+Agora `src/model.rs::import_xml` respeita o caminho e a guarda originais.
+O produto conserva avisos para revisão de definições inválidas, em vez de apagá-los
+silenciosamente. Os casos verificam importação, persistência/reabertura e 32
+prévias por caso, incluindo texto e resposta correta.
+
+Validação desta conferência: **50 testes passaram**, incluindo os nove casos
+do loader original; `cargo fmt --check`, `git diff --check` e
+`cargo build --release --locked` passaram (release em 1 min 23 s).
+Executável: `target/release/test-craft.exe`, 9.527.296 bytes.
+`rebuild_check` foi executado, concluiu sua etapa de build e produziu
+`../checks/round-0/screenshot.png`, inspecionada visualmente com a interface
+desenhada. Porém a chamada terminou com `timed out awaiting tools/call after
+300s`, sem resultado final de mecânica ou aprovação completa. **Não se declara
+aprovação do rebuild_check nesta conferência.**
+As seções seguintes são registros históricos e decisões de produto preservadas.
+
 ## Conferência atual: ordem de normalização (10/11/2026)
 
 O principal original foi aberto nesta execução por `core_target_open`:

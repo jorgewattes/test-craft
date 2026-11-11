@@ -135,6 +135,8 @@ pub struct Batch {
     pub same_questions: bool,
     #[serde(default)]
     pub plan: Vec<(String, usize)>,
+    #[serde(default)]
+    pub question_order: Vec<usize>,
     pub title: String,
     pub institution: String,
     pub teacher: String,
@@ -143,6 +145,42 @@ pub struct Batch {
     #[serde(default)]
     pub logo: Option<Picture>,
     pub students: Vec<StudentExam>,
+}
+
+impl Batch {
+    /// Apply a permutation of the generated slots to every student's version.
+    /// Values, alternatives and their answer keys travel with the question.
+    pub fn apply_question_order(&mut self, order: &[usize]) -> bool {
+        let count = self.students.first().map_or(0, |s| s.questions.len());
+        if order.len() != count
+            || order.iter().copied().collect::<BTreeSet<_>>() != (0..count).collect()
+            || self.students.iter().any(|s| s.questions.len() != count)
+        {
+            return false;
+        }
+        for student in &mut self.students {
+            let original = student.questions.clone();
+            student.questions = order.iter().map(|&i| original[i].clone()).collect();
+        }
+        self.question_order = order.to_vec();
+        true
+    }
+
+    pub fn move_question(&mut self, from: usize, to: usize) -> bool {
+        let count = self.students.first().map_or(0, |s| s.questions.len());
+        if from >= count || to >= count || self.students.iter().any(|s| s.questions.len() != count)
+        {
+            return false;
+        }
+        if self.question_order.len() != count {
+            self.question_order = (0..count).collect();
+        }
+        self.question_order.swap(from, to);
+        for student in &mut self.students {
+            student.questions.swap(from, to);
+        }
+        true
+    }
 }
 
 pub fn fmt(x: f64) -> String {
@@ -988,6 +1026,7 @@ pub fn generate_with_mode(
         seed,
         same_questions,
         plan: plan.to_vec(),
+        question_order: vec![],
         title: title.into(),
         institution: institution.into(),
         teacher: teacher.into(),
@@ -1290,34 +1329,172 @@ impl XmlNode {
         }
     }
 }
-fn xml_pictures(node: &XmlNode, issues: &mut Vec<String>) -> Vec<Picture> {
-    let mut pictures = vec![];
-    for file in node.children.iter().filter(|x| x.tag == "file") {
-        let name = file
-            .attrs
-            .get("name")
-            .cloned()
-            .unwrap_or_else(|| "Imagem".into());
-        match decode64(&file.text) {
-            Ok(data) => {
-                let picture = Picture { name, data };
-                if let Err(e) = check_picture(&picture) {
-                    issues.push(e);
+fn image_sources(html: &str) -> Vec<String> {
+    let mut sources = vec![];
+    for tag in html
+        .split('<')
+        .skip(1)
+        .filter_map(|s| s.split_once('>').map(|p| p.0))
+    {
+        let tag = tag.trim();
+        if tag.len() < 4
+            || !tag
+                .get(..3)
+                .is_some_and(|prefix| prefix.eq_ignore_ascii_case("img"))
+            || !tag.as_bytes()[3].is_ascii_whitespace()
+        {
+            continue;
+        }
+        let mut attrs = &tag[3..];
+        while !attrs.trim().is_empty() {
+            attrs = attrs.trim_start();
+            let end = attrs
+                .find(|c: char| c.is_whitespace() || c == '=')
+                .unwrap_or(attrs.len());
+            let key = &attrs[..end];
+            attrs = attrs[end..].trim_start();
+            if !attrs.starts_with('=') {
+                if attrs.is_empty() {
+                    break;
                 }
-                pictures.push(picture);
+                continue;
             }
-            Err(e) => issues.push(format!("{name}: {e}")),
+            attrs = attrs[1..].trim_start();
+            let (value, rest) = if attrs.starts_with(['\'', '"']) {
+                let quote = attrs.as_bytes()[0] as char;
+                let value = &attrs[1..];
+                match value.find(quote) {
+                    Some(end) => (&value[..end], &value[end + 1..]),
+                    None => (value, ""),
+                }
+            } else {
+                let end = attrs.find(char::is_whitespace).unwrap_or(attrs.len());
+                (&attrs[..end], &attrs[end..])
+            };
+            if key.eq_ignore_ascii_case("src") {
+                sources.push(value.replace("&amp;", "&"));
+            }
+            attrs = rest;
         }
     }
-    if node
-        .child("text")
-        .map(|x| x.text.to_lowercase().contains("<img"))
-        .unwrap_or(false)
-        && pictures.is_empty()
-    {
-        issues.push(
-            "Imagem externa não incluída no XML. Anexe a imagem na edição da questão.".into(),
-        );
+    sources
+}
+fn image_path(path: &str) -> String {
+    let path = path.strip_prefix("@@PLUGINFILE@@").unwrap_or(path);
+    let mut decoded = vec![];
+    let mut bytes = path.as_bytes().iter().copied();
+    while let Some(b) = bytes.next() {
+        if b == b'%' {
+            let pair: Vec<_> = bytes.by_ref().take(2).collect();
+            if pair.len() == 2 {
+                if let Ok(value) = u8::from_str_radix(&String::from_utf8_lossy(&pair), 16) {
+                    decoded.push(value);
+                    continue;
+                }
+            }
+            decoded.push(b);
+            decoded.extend(pair);
+        } else {
+            decoded.push(b);
+        }
+    }
+    String::from_utf8_lossy(&decoded)
+        .trim_start_matches('/')
+        .to_owned()
+}
+fn imported_picture(name: String, encoded: &str, issues: &mut Vec<String>) -> Option<Picture> {
+    let result = decode64(encoded).and_then(|data| {
+        let picture = Picture {
+            name: name.clone(),
+            data,
+        };
+        check_picture(&picture)?;
+        Ok(picture)
+    });
+    match result {
+        Ok(picture) => Some(picture),
+        Err(error) => {
+            issues.push(format!("{name}: {error}"));
+            None
+        }
+    }
+}
+fn xml_pictures(node: &XmlNode, issues: &mut Vec<String>) -> Vec<Picture> {
+    let mut files = vec![];
+    node.find("file", &mut files);
+    let sources = image_sources(&node.child("text").map(|x| x.text.as_str()).unwrap_or(""));
+    let mut pictures = vec![];
+    if sources.is_empty() {
+        for file in files {
+            let name = file
+                .attrs
+                .get("name")
+                .cloned()
+                .unwrap_or_else(|| "Imagem".into());
+            if let Some(picture) = imported_picture(name, &file.text, issues) {
+                pictures.push(picture);
+            }
+        }
+    } else {
+        for (i, source) in sources.iter().enumerate() {
+            if source.to_ascii_lowercase().starts_with("data:image/") {
+                match source
+                    .split_once(',')
+                    .filter(|(meta, _)| meta.to_ascii_lowercase().ends_with(";base64"))
+                {
+                    Some((_, encoded)) => {
+                        if let Some(picture) = imported_picture(
+                            format!("Imagem incorporada {}", i + 1),
+                            encoded,
+                            issues,
+                        ) {
+                            pictures.push(picture);
+                        }
+                    }
+                    None => {
+                        issues.push("Imagem incorporada sem base64 válido. Use PNG/JPG.".into())
+                    }
+                }
+                continue;
+            }
+            let path = image_path(source);
+            let file = files
+                .iter()
+                .find(|file| {
+                    let name = file.attrs.get("name").map(String::as_str).unwrap_or("");
+                    let dir = file.attrs.get("path").map(String::as_str).unwrap_or("/");
+                    image_path(&format!("{}/{name}", dir.trim_end_matches('/'))) == path
+                })
+                .or_else(|| {
+                    let matches: Vec<_> = files
+                        .iter()
+                        .filter(|file| {
+                            file.attrs
+                                .get("name")
+                                .is_some_and(|name| image_path(name) == path)
+                        })
+                        .collect();
+                    if matches.len() == 1 {
+                        Some(matches[0])
+                    } else {
+                        None
+                    }
+                });
+            if let Some(file) = file {
+                let name = file
+                    .attrs
+                    .get("name")
+                    .cloned()
+                    .unwrap_or_else(|| "Imagem".into());
+                if let Some(picture) = imported_picture(name, &file.text, issues) {
+                    pictures.push(picture);
+                }
+            } else {
+                issues.push(format!(
+                    "Imagem '{source}' não incluída no XML. Anexe a imagem na edição da questão."
+                ));
+            }
+        }
     }
     pictures
 }
@@ -1385,16 +1562,36 @@ pub fn import_xml(path: &Path) -> Result<Bank, String> {
         if !["calculatedmulti", "multichoice"].contains(&kind) {
             import_issues.push(format!("Tipo Moodle '{kind}' não suportado. Adapte a questão no editor; o XML original foi preservado."));
         }
-        let pictures = n
+        let mut pictures = n
             .child("questiontext")
             .map(|node| xml_pictures(node, &mut import_issues))
             .unwrap_or_default();
+        // Older Moodle exports store the statement image on the question itself.
+        if let Some(encoded) = n
+            .child("image_base64")
+            .filter(|x| !x.text.trim().is_empty())
+        {
+            let name = n
+                .child("image")
+                .map(|x| x.text.clone())
+                .unwrap_or_else(|| "Imagem Moodle".into());
+            if let Some(picture) = imported_picture(name, &encoded.text, &mut import_issues) {
+                pictures.push(picture);
+            }
+        }
         let mut variables: Vec<Variable> = vec![];
         let mut defs = vec![];
         // MoodTest.py carregar_questoes, source offset 0xc549: only
         // calculatedmulti uses datasets; trim individual values before parsing.
         if kind == "calculatedmulti" {
-            n.find("dataset_definition", &mut defs);
+            if let Some(parent) = n.child("dataset_definitions") {
+                defs.extend(
+                    parent
+                        .children
+                        .iter()
+                        .filter(|x| x.tag == "dataset_definition"),
+                );
+            }
         }
         for d in defs {
             let name = d.nested("name");
@@ -1402,8 +1599,15 @@ pub fn import_xml(path: &Path) -> Result<Bank, String> {
             if name.is_empty() {
                 continue;
             }
-            let mut vals = vec![];
-            d.find("value", &mut vals);
+            // Original source 0xcbee: follow direct dataset_items/dataset_item/value
+            // children, excluding metadata, nested wrappers and extra value nodes.
+            let vals: Vec<_> = d
+                .child("dataset_items")
+                .into_iter()
+                .flat_map(|parent| parent.children.iter())
+                .filter(|item| item.tag == "dataset_item")
+                .filter_map(|item| item.child("value"))
+                .collect();
             let values: Vec<f64> = vals
                 .iter()
                 .filter_map(|x| match x.text.trim().replace(',', ".").parse::<f64>() {
@@ -1419,8 +1623,11 @@ pub fn import_xml(path: &Path) -> Result<Bank, String> {
                 .collect();
             if values.is_empty() {
                 import_issues.push(format!(
-                    "Dataset {name} sem valores. Defina um intervalo no editor."
+                    "Dataset {name} sem valores: definição ignorada. Revise os valores no editor."
                 ));
+                // Original guard 0xcf9b: an empty definition never installs a
+                // variable or replaces earlier valid values with a synthetic zero.
+                continue;
             }
             let variable = Variable {
                 name,
@@ -1509,6 +1716,132 @@ mod tests {
     }
 
     use super::*;
+    #[test]
+    fn moving_questions_preserves_values_keys_and_saved_order_for_both_modes() {
+        let bank = examples();
+        let plan = vec![("Mecânica".into(), 2), ("Eletricidade".into(), 1)];
+        for mode in [false, true] {
+            let mut batch =
+                generate_with_mode(&bank, &plan, "Ana\nBia", 42, "Prova", "", "", "", "", mode)
+                    .unwrap();
+            let original = serde_json::to_value(&batch).unwrap();
+            assert!(!batch.move_question(0, 3));
+            assert_eq!(serde_json::to_value(&batch).unwrap(), original);
+            assert!(batch.move_question(2, 1));
+            assert!(batch.move_question(1, 0));
+            assert_eq!(batch.question_order, vec![2, 0, 1]);
+            for (i, student) in batch.students.iter().enumerate() {
+                for (position, source) in [2, 0, 1].iter().enumerate() {
+                    assert_eq!(
+                        serde_json::to_value(&student.questions[position]).unwrap(),
+                        original["students"][i]["questions"][*source]
+                    );
+                }
+            }
+            let reopened: Batch =
+                serde_json::from_value(serde_json::to_value(&batch).unwrap()).unwrap();
+            let mut regenerated =
+                generate_with_mode(&bank, &plan, "Ana\nBia", 42, "Prova", "", "", "", "", mode)
+                    .unwrap();
+            assert!(!regenerated.apply_question_order(&[0, 0, 2]));
+            assert!(regenerated.apply_question_order(&reopened.question_order));
+            assert_eq!(
+                serde_json::to_value(&regenerated).unwrap(),
+                serde_json::to_value(&reopened).unwrap()
+            );
+            let legacy: Batch = serde_json::from_value(original).unwrap();
+            assert!(legacy.question_order.is_empty());
+        }
+    }
+
+    #[test]
+    fn moodle_images_resolve_paths_inline_data_and_missing_files_individually() {
+        fn encode(bytes: &[u8]) -> String {
+            let alphabet = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+            let mut result = String::new();
+            for chunk in bytes.chunks(3) {
+                let n = ((chunk[0] as u32) << 16)
+                    | ((chunk.get(1).copied().unwrap_or(0) as u32) << 8)
+                    | chunk.get(2).copied().unwrap_or(0) as u32;
+                result.push(alphabet[((n >> 18) & 63) as usize] as char);
+                result.push(alphabet[((n >> 12) & 63) as usize] as char);
+                result.push(if chunk.len() > 1 {
+                    alphabet[((n >> 6) & 63) as usize] as char
+                } else {
+                    '='
+                });
+                result.push(if chunk.len() > 2 {
+                    alphabet[(n & 63) as usize] as char
+                } else {
+                    '='
+                });
+            }
+            result
+        }
+        let mut png = std::io::Cursor::new(vec![]);
+        image::DynamicImage::ImageRgb8(image::RgbImage::from_pixel(
+            4,
+            3,
+            image::Rgb([20, 100, 80]),
+        ))
+        .write_to(&mut png, image::ImageFormat::Png)
+        .unwrap();
+        let encoded = encode(png.get_ref());
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("checks/moodle-images");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("images.xml");
+        std::fs::write(&path, format!(r#"<quiz><question type="multichoice"><name><text>Imagens Moodle</text></name>
+          <questiontext><text><![CDATA[<p>Observe:</p><IMG alt='figura' SRC = '@@PLUGINFILE@@/figuras/diagrama%20um.png'><img src="data:image/png;base64,{encoded}">]]></text>
+          <file name="diagrama um.png" path="/figuras/" encoding="base64">{encoded}</file>
+          <file name="anexo nao utilizado.png" encoding="base64">{encoded}</file></questiontext>
+          <answer fraction="100"><text><![CDATA[Correta <img src="@@PLUGINFILE@@/resposta.png">]]><file name="resposta.png" encoding="base64">{encoded}</file></text></answer>
+          <answer fraction="0"><text>Errada</text></answer></question></quiz>"#)).unwrap();
+        let bank = import_xml(&path).unwrap();
+        let q = &bank.questions[0];
+        assert!(q.import_issues.is_empty(), "{:?}", q.import_issues);
+        validate(q).unwrap();
+        assert_eq!(q.pictures.len(), 2);
+        assert_eq!(q.pictures[0].name, "diagrama um.png");
+        assert_eq!(q.answers[0].pictures.len(), 1);
+        assert!(q
+            .pictures
+            .iter()
+            .chain(&q.answers[0].pictures)
+            .all(|p| image::load_from_memory(&p.data).is_ok()));
+        save_bank(&dir.join("bank.json"), &bank).unwrap();
+        let reopened = read_bank(&dir.join("bank.json")).unwrap();
+        assert_eq!(reopened.questions[0].pictures, q.pictures);
+        let batch = generate(
+            &reopened,
+            &[("Importadas".into(), 1)],
+            "Ana\nBia",
+            42,
+            "Imagens",
+            "",
+            "",
+            "",
+            "",
+        )
+        .unwrap();
+        let exported = crate::pdf::export(&batch, &dir).unwrap();
+        let pdf = std::fs::read(exported.join("todas_as_provas.pdf")).unwrap();
+        assert!(pdf.windows(15).any(|w| w == b"/Subtype /Image"));
+        let xml = std::fs::read_to_string(&path).unwrap().replace(
+            "<p>Observe:</p>",
+            "<p>Observe:</p><img src='@@PLUGINFILE@@/ausente.png'>",
+        );
+        std::fs::write(&path, xml).unwrap();
+        let partial = import_xml(&path).unwrap();
+        assert_eq!(partial.questions[0].pictures.len(), 2);
+        assert_eq!(partial.questions[0].import_issues.len(), 1);
+        assert!(partial.questions[0].import_issues[0].contains("ausente.png"));
+        assert!(validate(&partial.questions[0]).is_err());
+        assert_eq!(
+            image_sources("<áéí>texto</áéí><img src='a.png'>"),
+            vec!["a.png"]
+        );
+    }
+
     #[test]
     fn status_compatibility_and_eligible_generation_modes() {
         let mut bank = examples();
@@ -2024,6 +2357,64 @@ mod tests {
                     result.unwrap(),
                     case["value"].as_f64().unwrap(),
                     "{expression}"
+                );
+            }
+        }
+    }
+    #[test]
+    fn dataset_scope_matches_original_through_generation() {
+        let mechanics: serde_json::Value =
+            serde_json::from_str(include_str!("../mechanics.json")).unwrap();
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("checks/original-dataset-scope-test");
+        std::fs::create_dir_all(&dir).unwrap();
+        for case in mechanics["original"]["dataset_scope_cases"]
+            .as_array()
+            .unwrap()
+        {
+            let xml = dir.join("datasets.xml");
+            std::fs::write(&xml, case["xml"].as_str().unwrap()).unwrap();
+            let bank = import_xml(&xml).unwrap();
+            let json = dir.join("bank.json");
+            save_bank(&json, &bank).unwrap();
+            let mut bank = read_bank(&json).unwrap();
+            let q = &mut bank.questions[0];
+            let actual: Vec<_> = q
+                .variables
+                .iter()
+                .map(|v| serde_json::json!({"name": v.name, "values": v.values}))
+                .collect();
+            assert_eq!(
+                serde_json::json!(actual),
+                case["expected"],
+                "{}",
+                case["label"]
+            );
+            assert_eq!(
+                !q.import_issues.is_empty(),
+                case["review"].as_bool().unwrap(),
+                "{}",
+                case["label"]
+            );
+            if !q.import_issues.is_empty() {
+                assert!(validate(q).is_err());
+                // The product retains review warnings for malformed imports.
+                q.import_issues.clear();
+            }
+            assert!(validate(q).is_ok(), "{}", case["label"]);
+            let expected: Vec<f64> =
+                serde_json::from_value(case["expected"][0]["values"].clone()).unwrap();
+            for seed in 0..32 {
+                let generated = preview(q, seed).unwrap();
+                let value = generated.values["x"];
+                assert!(
+                    expected.contains(&value),
+                    "{}: unexpected {value}",
+                    case["label"]
+                );
+                assert_eq!(generated.text, format!("Valor {}", fmt(value)));
+                assert_eq!(
+                    generated.answers.iter().find(|a| a.correct).unwrap().text,
+                    fmt(value)
                 );
             }
         }

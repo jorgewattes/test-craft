@@ -1,6 +1,12 @@
 {
   "version": 1,
   "values": [
+    {
+      "name": "dataset XML scope and empty definition guard",
+      "group": "import",
+      "value": "Read direct dataset_definitions/dataset_definition/dataset_items/dataset_item/value only; ignore empty definitions without overwriting earlier values; valid replacements retain duplicate weights and insertion order",
+      "source": "Python carregar_questoes source offset 0xc549; items path 0xcbee; if valores guard 0xcf9b; assignment 0xcfc0; original.dataset_scope_cases"
+    },
 {
   "name": "expression normalization order",
   "group": "calculation",
@@ -190,6 +196,146 @@
     "native_reference_queries_awaited": 5
   },
   "original": {
+    "dataset_scope_cases": [
+      {
+        "label": "empty later definition retains previous values",
+        "xml": "<quiz><question type=\"calculatedmulti\"><name><text>Dataset scope</text></name><questiontext><text>Valor {x}</text></questiontext><answer fraction=\"100\"><text>{x}</text></answer><answer fraction=\"0\"><text>Outra</text></answer><dataset_definitions><dataset_definition><name><text>x</text></name><dataset_items><dataset_item><value>2,5</value></dataset_item><dataset_item><value>2,5</value></dataset_item><dataset_item><value>4</value></dataset_item></dataset_items></dataset_definition><dataset_definition><name><text>x</text></name><dataset_items></dataset_items></dataset_definition></dataset_definitions></question></quiz>",
+        "expected": [
+          {
+            "name": "x",
+            "values": [
+              2.5,
+              2.5,
+              4.0
+            ]
+          }
+        ],
+        "review": true
+      },
+      {
+        "label": "invalid later definition retains previous values",
+        "xml": "<quiz><question type=\"calculatedmulti\"><name><text>Dataset scope</text></name><questiontext><text>Valor {x}</text></questiontext><answer fraction=\"100\"><text>{x}</text></answer><answer fraction=\"0\"><text>Outra</text></answer><dataset_definitions><dataset_definition><name><text>x</text></name><dataset_items><dataset_item><value>2,5</value></dataset_item><dataset_item><value>2,5</value></dataset_item><dataset_item><value>4</value></dataset_item></dataset_items></dataset_definition><dataset_definition><name><text>x</text></name><dataset_items><dataset_item><value>invalid</value></dataset_item></dataset_items></dataset_definition></dataset_definitions></question></quiz>",
+        "expected": [
+          {
+            "name": "x",
+            "values": [
+              2.5,
+              2.5,
+              4.0
+            ]
+          }
+        ],
+        "review": true
+      },
+      {
+        "label": "blank later definition retains previous values",
+        "xml": "<quiz><question type=\"calculatedmulti\"><name><text>Dataset scope</text></name><questiontext><text>Valor {x}</text></questiontext><answer fraction=\"100\"><text>{x}</text></answer><answer fraction=\"0\"><text>Outra</text></answer><dataset_definitions><dataset_definition><name><text>x</text></name><dataset_items><dataset_item><value>2,5</value></dataset_item><dataset_item><value>2,5</value></dataset_item><dataset_item><value>4</value></dataset_item></dataset_items></dataset_definition><dataset_definition><name><text>x</text></name><dataset_items><dataset_item><value>   </value></dataset_item></dataset_items></dataset_definition></dataset_definitions></question></quiz>",
+        "expected": [
+          {
+            "name": "x",
+            "values": [
+              2.5,
+              2.5,
+              4.0
+            ]
+          }
+        ],
+        "review": true
+      },
+      {
+        "label": "metadata values are not dataset entries",
+        "xml": "<quiz><question type=\"calculatedmulti\"><name><text>Dataset scope</text></name><questiontext><text>Valor {x}</text></questiontext><answer fraction=\"100\"><text>{x}</text></answer><answer fraction=\"0\"><text>Outra</text></answer><dataset_definitions><dataset_definition><name><text>x</text></name><minimum><value>999</value></minimum><dataset_items><dataset_item><value>2,5</value></dataset_item><dataset_item><value>4</value></dataset_item></dataset_items></dataset_definition></dataset_definitions></question></quiz>",
+        "expected": [
+          {
+            "name": "x",
+            "values": [
+              2.5,
+              4.0
+            ]
+          }
+        ],
+        "review": false
+      },
+      {
+        "label": "nested item wrappers are not dataset entries",
+        "xml": "<quiz><question type=\"calculatedmulti\"><name><text>Dataset scope</text></name><questiontext><text>Valor {x}</text></questiontext><answer fraction=\"100\"><text>{x}</text></answer><answer fraction=\"0\"><text>Outra</text></answer><dataset_definitions><dataset_definition><name><text>x</text></name><dataset_items><dataset_item><value>2,5</value></dataset_item><dataset_item><value>2,5</value></dataset_item><dataset_item><value>4</value></dataset_item></dataset_items></dataset_definition><dataset_definition><name><text>x</text></name><dataset_items><wrapper><dataset_item><value>999</value></dataset_item></wrapper></dataset_items></dataset_definition></dataset_definitions></question></quiz>",
+        "expected": [
+          {
+            "name": "x",
+            "values": [
+              2.5,
+              2.5,
+              4.0
+            ]
+          }
+        ],
+        "review": true
+      },
+      {
+        "label": "outside definitions are ignored",
+        "xml": "<quiz><question type=\"calculatedmulti\"><name><text>Dataset scope</text></name><questiontext><text>Valor {x}</text></questiontext><answer fraction=\"100\"><text>{x}</text></answer><answer fraction=\"0\"><text>Outra</text></answer><dataset_definitions><dataset_definition><name><text>x</text></name><dataset_items><dataset_item><value>2,5</value></dataset_item><dataset_item><value>2,5</value></dataset_item><dataset_item><value>4</value></dataset_item></dataset_items></dataset_definition></dataset_definitions><dataset_definition><name><text>x</text></name><dataset_items><dataset_item><value>999</value></dataset_item></dataset_items></dataset_definition></question></quiz>",
+        "expected": [
+          {
+            "name": "x",
+            "values": [
+              2.5,
+              2.5,
+              4.0
+            ]
+          }
+        ],
+        "review": false
+      },
+      {
+        "label": "later valid definition replaces and keeps duplicate weights",
+        "xml": "<quiz><question type=\"calculatedmulti\"><name><text>Dataset scope</text></name><questiontext><text>Valor {x}</text></questiontext><answer fraction=\"100\"><text>{x}</text></answer><answer fraction=\"0\"><text>Outra</text></answer><dataset_definitions><dataset_definition><name><text>x</text></name><dataset_items><dataset_item><value>2,5</value></dataset_item><dataset_item><value>2,5</value></dataset_item><dataset_item><value>4</value></dataset_item></dataset_items></dataset_definition><dataset_definition><name><text>y</text></name><dataset_items><dataset_item><value>3</value></dataset_item></dataset_items></dataset_definition><dataset_definition><name><text>x</text></name><dataset_items><dataset_item><value>7</value></dataset_item><dataset_item><value>7</value></dataset_item><dataset_item><value>9</value></dataset_item></dataset_items></dataset_definition></dataset_definitions></question></quiz>",
+        "expected": [
+          {
+            "name": "x",
+            "values": [
+              7.0,
+              7.0,
+              9.0
+            ]
+          },
+          {
+            "name": "y",
+            "values": [
+              3.0
+            ]
+          }
+        ],
+        "review": false
+      },
+      {
+        "label": "empty first definition is omitted",
+        "xml": "<quiz><question type=\"calculatedmulti\"><name><text>Dataset scope</text></name><questiontext><text>Valor {x}</text></questiontext><answer fraction=\"100\"><text>{x}</text></answer><answer fraction=\"0\"><text>Outra</text></answer><dataset_definitions><dataset_definition><name><text>unused</text></name><dataset_items></dataset_items></dataset_definition><dataset_definition><name><text>x</text></name><dataset_items><dataset_item><value>2,5</value></dataset_item><dataset_item><value>2,5</value></dataset_item><dataset_item><value>4</value></dataset_item></dataset_items></dataset_definition></dataset_definitions></question></quiz>",
+        "expected": [
+          {
+            "name": "x",
+            "values": [
+              2.5,
+              2.5,
+              4.0
+            ]
+          }
+        ],
+        "review": true
+      },
+      {
+        "label": "only first direct value per item is used",
+        "xml": "<quiz><question type=\"calculatedmulti\"><name><text>Dataset scope</text></name><questiontext><text>Valor {x}</text></questiontext><answer fraction=\"100\"><text>{x}</text></answer><answer fraction=\"0\"><text>Outra</text></answer><dataset_definitions><dataset_definition><name><text>x</text></name><dataset_items><dataset_item><value>2</value><value>999</value></dataset_item></dataset_items></dataset_definition></dataset_definitions></question></quiz>",
+        "expected": [
+          {
+            "name": "x",
+            "values": [
+              2.0
+            ]
+          }
+        ],
+        "review": false
+      }
+    ],
     "normalization_cases_provenance": "Derived by reading original _preprocess_expr and _eval_ast; original code was not executed in this review.",
     "normalization_cases": [
   {
