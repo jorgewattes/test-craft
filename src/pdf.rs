@@ -179,7 +179,57 @@ fn wrapped_lines_width(t: &str, size: f64, bold: bool, max: f64) -> Vec<String> 
     }
     lines
 }
+#[derive(Clone)]
+pub(crate) enum PreviewOp {
+    Text {
+        x: f64,
+        y: f64,
+        text: String,
+        size: f64,
+        bold: bool,
+        color: [u8; 3],
+    },
+    Line {
+        from: [f64; 2],
+        to: [f64; 2],
+        width: f64,
+        color: [u8; 3],
+    },
+    Rect {
+        x: f64,
+        y: f64,
+        width: f64,
+        height: f64,
+        color: [u8; 3],
+    },
+    Image {
+        x: f64,
+        top: f64,
+        width: f64,
+        height: f64,
+        picture: Picture,
+    },
+}
+pub(crate) struct PreviewDocument {
+    pub pages: Vec<Vec<PreviewOp>>,
+}
+pub(crate) const PAGE_SIZE: [f64; 2] = [WIDTH, HEIGHT];
+pub(crate) fn preview(batch: &Batch, student: usize) -> PreviewDocument {
+    let mut pdf = exam(batch, &batch.students[student]);
+    if !pdf.page.is_empty() {
+        pdf.preview_pages.push(pdf.preview_page);
+    }
+    PreviewDocument {
+        pages: pdf.preview_pages,
+    }
+}
+pub(crate) fn preview_text_width(text: &str, size: f64, bold: bool) -> f64 {
+    text_width(text, size, bold)
+}
 pub struct Pdf {
+    preview_pages: Vec<Vec<PreviewOp>>,
+    preview_page: Vec<PreviewOp>,
+    text_color: [u8; 3],
     pictures: Vec<PdfImage>,
     pages: Vec<String>,
     page: String,
@@ -191,6 +241,9 @@ pub struct Pdf {
 impl Pdf {
     pub fn new(title: &str, name: &str) -> Self {
         let mut p = Self {
+            preview_pages: vec![],
+            preview_page: vec![],
+            text_color: [0, 0, 0],
             pictures: vec![],
             pages: vec![],
             page: String::new(),
@@ -206,6 +259,7 @@ impl Pdf {
         self.number += 1;
         self.y = HEIGHT - MARGIN;
         self.page.push_str("0.10 0.20 0.19 rg\n");
+        self.text_color = [26, 51, 48];
         self.line(
             &self.title.clone(),
             if self.number == 1 { 16. } else { 11. },
@@ -220,13 +274,34 @@ impl Pdf {
             WIDTH - MARGIN,
             self.y
         ));
+        self.preview_line([MARGIN, self.y], [WIDTH - MARGIN, self.y], 1., [56, 97, 87]);
         let footer = format!("Página {}", self.number);
         let x = WIDTH - MARGIN - text_width(&footer, 8., false);
         self.page.push_str(&format!(
             "0.35 g BT 1 0 0 1 {x:.3} 24 Tm {} ET 0 g\n",
             text_commands(&footer, 8., false)
         ));
+        self.preview_text(x, 24., &footer, 8., false, [89, 89, 89]);
+        self.text_color = [0, 0, 0];
         self.y -= 12.;
+    }
+    fn preview_text(&mut self, x: f64, y: f64, text: &str, size: f64, bold: bool, color: [u8; 3]) {
+        self.preview_page.push(PreviewOp::Text {
+            x,
+            y,
+            text: text.into(),
+            size,
+            bold,
+            color,
+        });
+    }
+    fn preview_line(&mut self, from: [f64; 2], to: [f64; 2], width: f64, color: [u8; 3]) {
+        self.preview_page.push(PreviewOp::Line {
+            from,
+            to,
+            width,
+            color,
+        });
     }
     fn draw(&mut self, t: &str, size: f64, bold: bool) {
         self.page.push_str(&format!(
@@ -234,9 +309,12 @@ impl Pdf {
             self.y,
             text_commands(t, size, bold)
         ));
+        self.preview_text(MARGIN, self.y, t, size, bold, self.text_color);
         self.y -= size * 1.22;
     }
     fn next(&mut self) {
+        self.preview_pages
+            .push(std::mem::take(&mut self.preview_page));
         self.pages.push(std::mem::take(&mut self.page));
         self.begin();
     }
@@ -273,7 +351,15 @@ impl Pdf {
             self.page.push_str(&format!(
                 "q 0.827451 g {MARGIN:.3} {middle:.3} {width:.3} 22 re f 0 G 0 g 0.75 w\n"
             ));
+            self.preview_page.push(PreviewOp::Rect {
+                x: MARGIN,
+                y: middle,
+                width,
+                height: 22.,
+                color: [211, 211, 211],
+            });
             for y in [top, middle, bottom] {
+                self.preview_line([MARGIN, y], [MARGIN + width, y], 0.75, [0, 0, 0]);
                 self.page.push_str(&format!(
                     "{MARGIN:.3} {y:.3} m {:.3} {y:.3} l S\n",
                     MARGIN + width
@@ -281,6 +367,7 @@ impl Pdf {
             }
             for column in 0..=columns {
                 let x = MARGIN + column as f64 * cell_width;
+                self.preview_line([x, bottom], [x, top], 0.75, [0, 0, 0]);
                 self.page
                     .push_str(&format!("{x:.3} {bottom:.3} m {x:.3} {top:.3} l S\n"));
             }
@@ -294,22 +381,36 @@ impl Pdf {
                     top - 14.,
                     text_commands(&label, 10., true)
                 ));
+                self.preview_text(x, top - 14., &label, 10., true, [0, 0, 0]);
             }
             self.page.push_str("Q\n");
             self.y = bottom - 8.;
         }
         self.gap(8.);
     }
-    pub fn picture(&mut self, pic: &Picture) {
+    pub fn picture(&mut self, pic: &Picture, centered: bool) {
         let height = picture_height(pic);
         self.ensure(height + 4.);
-        self.y -= self.image_at(pic, MARGIN, self.y, 350., 220.) + 12.;
+        self.y -= self.image_at(pic, MARGIN, self.y, 350., 220., centered) + 12.;
     }
-    fn image_at(&mut self, pic: &Picture, x: f64, top: f64, max_w: f64, max_h: f64) -> f64 {
+    fn image_at(
+        &mut self,
+        pic: &Picture,
+        x: f64,
+        top: f64,
+        max_w: f64,
+        max_h: f64,
+        centered: bool,
+    ) -> f64 {
         use std::io::Write;
         if let Ok(img) = image::load_from_memory(&pic.data) {
             // Composite transparent logos on white rather than turning them black.
-            let mut rgba = img.thumbnail(1280, 1280).to_rgba8();
+            let (layout_w, layout_h) = layout_image_dimensions(img.width(), img.height());
+            let mut rgba = if img.width() > 1280 || img.height() > 1280 {
+                img.thumbnail(1280, 1280).to_rgba8()
+            } else {
+                img.to_rgba8()
+            };
             for pixel in rgba.pixels_mut() {
                 let alpha = pixel[3] as u32;
                 for channel in 0..3 {
@@ -320,9 +421,10 @@ impl Pdf {
             }
             let rgb = image::DynamicImage::ImageRgba8(rgba).to_rgb8();
             let (w, h) = rgb.dimensions();
-            let scale = (max_w / w as f64).min(max_h / h as f64).min(1.);
-            let dw = w as f64 * scale;
-            let dh = h as f64 * scale;
+            let scale = (max_w / layout_w).min(max_h / layout_h).min(1.);
+            let dw = layout_w * scale;
+            let dh = layout_h * scale;
+            let x = if centered { (WIDTH - dw) / 2. } else { x };
             let id = self.pictures.len();
             let mut encoder =
                 flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
@@ -332,6 +434,13 @@ impl Pdf {
                         "q {dw} 0 0 {dh} {x} {} cm /Im{id} Do Q\n",
                         top - dh
                     ));
+                    self.preview_page.push(PreviewOp::Image {
+                        x,
+                        top,
+                        width: dw,
+                        height: dh,
+                        picture: pic.clone(),
+                    });
                     self.pictures.push(PdfImage {
                         width: w,
                         height: h,
@@ -432,7 +541,7 @@ pub fn letters(q: &Instance) -> String {
         .iter()
         .enumerate()
         .filter(|(_, a)| a.correct)
-        .map(|(i, _)| ((b'a' + i as u8) as char).to_string())
+        .map(|(i, _)| answer_label(i))
         .collect::<Vec<_>>()
         .join("/");
     // MoodTest.py indices_para_letras, source offset 0xd0f7.
@@ -446,15 +555,17 @@ fn exam(batch: &Batch, s: &StudentExam) -> Pdf {
     let mut p = Pdf::new(&batch.title, &s.name);
     // Replace the generic first-page heading with a print-friendly exam header.
     p.page.clear();
+    p.preview_page.clear();
     p.y = HEIGHT - MARGIN;
     let top = p.y;
     let logo_height = batch
         .logo
         .as_ref()
-        .map(|logo| p.image_at(logo, WIDTH - MARGIN - 80., top, 80., 65.))
+        .map(|logo| p.image_at(logo, WIDTH - MARGIN - 80., top, 80., 65., false))
         .unwrap_or(0.);
     let text_max = WIDTH - 2. * MARGIN - if batch.logo.is_some() { 100. } else { 0. };
     p.page.push_str("0.10 0.20 0.19 rg\n");
+    p.text_color = [26, 51, 48];
     for (text, size, bold) in [(&batch.institution, 10., false), (&batch.title, 18., true)] {
         if !text.trim().is_empty() {
             for line in wrapped_lines_width(text, size, bold, text_max) {
@@ -471,6 +582,8 @@ fn exam(batch: &Batch, s: &StudentExam) -> Pdf {
         WIDTH - MARGIN,
         p.y
     ));
+    p.preview_line([MARGIN, p.y], [WIDTH - MARGIN, p.y], 2., [56, 112, 97]);
+    p.text_color = [0, 0, 0];
     p.gap(14.);
     p.line(&format!("Aluno(a): {}", s.name), 11., true);
     p.gap(5.);
@@ -490,6 +603,14 @@ fn exam(batch: &Batch, s: &StudentExam) -> Pdf {
         WIDTH - MARGIN - text_width("Página 1", 8., false),
         text_commands("Página 1", 8., false)
     ));
+    p.preview_text(
+        WIDTH - MARGIN - text_width("Página 1", 8., false),
+        24.,
+        "Página 1",
+        8.,
+        false,
+        [89, 89, 89],
+    );
     p.gap(5.);
     p.line(
         "Responda às questões abaixo. Assinale as alternativas corretas.",
@@ -506,12 +627,8 @@ fn exam(batch: &Batch, s: &StudentExam) -> Pdf {
                 .iter()
                 .enumerate()
                 .map(|(j, a)| {
-                    wrapped_lines(
-                        &format!("   {}) {}", (b'a' + j as u8) as char, a.text),
-                        10.5,
-                        false,
-                    )
-                    .len() as f64
+                    wrapped_lines(&format!("   {}) {}", answer_label(j), a.text), 10.5, false).len()
+                        as f64
                         * 10.5
                         * 1.22
                         + a.pictures.iter().map(picture_height).sum::<f64>()
@@ -547,100 +664,34 @@ fn exam(batch: &Batch, s: &StudentExam) -> Pdf {
         p.line(&title, 10.5, true);
         p.gap(3.);
         for pic in &q.pictures {
-            p.picture(pic)
+            p.picture(pic, true);
         }
         for (j, a) in q.answers.iter().enumerate() {
-            p.line(
-                &format!("   {}) {}", (b'a' + j as u8) as char, a.text),
-                10.5,
-                false,
-            );
+            p.line(&format!("   {}) {}", answer_label(j), a.text), 10.5, false);
             for pic in &a.pictures {
-                p.picture(pic)
+                p.picture(pic, false)
             }
         }
         p.gap(9.);
     }
     p
 }
+// Preserve the PDF's existing display geometry while avoiding a 1280px upscale
+// of small source images just to measure or compress them.
+fn layout_image_dimensions(width: u32, height: u32) -> (f64, f64) {
+    let ratio = (1280. / width as f64).min(1280. / height as f64);
+    (
+        (width as f64 * ratio).round().max(1.),
+        (height as f64 * ratio).round().max(1.),
+    )
+}
 fn picture_height(pic: &Picture) -> f64 {
     image::load_from_memory(&pic.data)
         .map(|img| {
-            let rgb = img.thumbnail(1280, 1280);
-            let w = rgb.width() as f64;
-            let h = rgb.height() as f64;
+            let (w, h) = layout_image_dimensions(img.width(), img.height());
             h * (350. / w).min(220. / h).min(1.) + 12.
         })
         .unwrap_or(0.)
-}
-fn key(batch: &Batch, s: &StudentExam) -> Pdf {
-    let mut p = Pdf::new("Gabarito individual", &s.name);
-    p.line(&batch.title, 12., true);
-    p.line(
-        &format!("Identificador do lote: {}", batch.seed),
-        10.,
-        false,
-    );
-    p.gap(16.);
-    for (i, q) in s.questions.iter().enumerate() {
-        p.ensure(65.);
-        if !q.category.is_empty() {
-            p.line(
-                &format!("Categoria: {}", q.category.replace('/', " / ")),
-                8.,
-                false,
-            );
-        }
-        p.line(
-            &format!("Questão {} - {}: {}", i + 1, q.title, letters(q)),
-            11.,
-            true,
-        );
-        for a in q.answers.iter().filter(|a| a.correct) {
-            p.line(&a.text, 10., false)
-        }
-        p.line(
-            &q.values
-                .iter()
-                .map(|(k, v)| format!("{k} = {}", fmt(*v)))
-                .collect::<Vec<_>>()
-                .join("  |  "),
-            9.,
-            false,
-        );
-        p.gap(10.);
-    }
-    p
-}
-fn safe(name: &str) -> String {
-    // MoodTest.py App._sanitizar_nome, source offset 0x1340f, called at 0x13be2:
-    // trim, collapse invalid-character runs, then collapse whitespace runs.
-    // These are separate passes: "Ana / Silva" becomes "Ana___Silva".
-    let mut normalized = String::new();
-    let mut previous_invalid = false;
-    for c in name.trim().chars() {
-        let invalid = matches!(c, '\\' | '/' | ':' | '*' | '?' | '"' | '<' | '>' | '|');
-        if !invalid || !previous_invalid {
-            normalized.push(if invalid { '_' } else { c });
-        }
-        previous_invalid = invalid;
-    }
-    let mut s = String::new();
-    let mut previous_space = false;
-    for c in normalized.chars() {
-        let space = c.is_whitespace() || matches!(c, '\u{1c}'..='\u{1f}');
-        if !space || !previous_space {
-            s.push(if space { '_' } else { c });
-        }
-        previous_space = space;
-    }
-    // Product limit retained; the original does not truncate names.
-    let s: String = s.chars().take(90).collect();
-    if s.is_empty() {
-        "aluno".into()
-    } else {
-        s
-    }
 }
 pub fn export(batch: &Batch, base: &Path) -> Result<PathBuf, String> {
     if batch.students.is_empty() {
@@ -658,24 +709,7 @@ pub fn export(batch: &Batch, base: &Path) -> Result<PathBuf, String> {
         let mut keys = Pdf::new("Gabarito consolidado", &batch.title);
         keys.line(&format!("Identificador: {}", batch.seed), 10., false);
         keys.gap(14.);
-        let mut csv = String::from("\u{feff}Aluno;Questão;Gabarito;Resposta correta;Categoria\n");
-        for (i, s) in batch.students.iter().enumerate() {
-            let prefix = format!("{:03}_{}", i + 1, safe(&s.name));
-            fs::write(
-                folder.join(format!("moodle_{prefix}.xml")),
-                crate::moodle::instances_xml(&s.questions, &[])?,
-            )
-            .map_err(|e| e.to_string())?;
-            fs::write(
-                folder.join(format!("prova_{prefix}.pdf")),
-                exam(batch, s).bytes(),
-            )
-            .map_err(|e| e.to_string())?;
-            fs::write(
-                folder.join(format!("gabarito_{prefix}.pdf")),
-                key(batch, s).bytes(),
-            )
-            .map_err(|e| e.to_string())?;
+        for s in &batch.students {
             if let Some(a) = &mut all {
                 a.append(exam(batch, s))
             } else {
@@ -694,35 +728,11 @@ pub fn export(batch: &Batch, base: &Path) -> Result<PathBuf, String> {
                 false,
             );
             keys.gap(12.);
-            for (j, q) in s.questions.iter().enumerate() {
-                let quote = |s: &str| format!("\"{}\"", s.replace('"', "\"\""));
-                csv.push_str(&format!(
-                    "{};{};{};{};{}\n",
-                    quote(&s.name),
-                    j + 1,
-                    letters(q),
-                    quote(
-                        &q.answers
-                            .iter()
-                            .filter(|a| a.correct)
-                            .map(|a| a.text.clone())
-                            .collect::<Vec<_>>()
-                            .join(" / ")
-                    ),
-                    quote(&q.category)
-                ));
-            }
         }
         fs::write(folder.join("todas_as_provas.pdf"), all.unwrap().bytes())
             .map_err(|e| e.to_string())?;
         fs::write(folder.join("gabarito_consolidado.pdf"), keys.bytes())
             .map_err(|e| e.to_string())?;
-        fs::write(folder.join("gabaritos.csv"), csv).map_err(|e| e.to_string())?;
-        fs::write(
-            folder.join("lote.json"),
-            serde_json::to_vec_pretty(batch).map_err(|e| e.to_string())?,
-        )
-        .map_err(|e| e.to_string())?;
         Ok(())
     })();
     if let Err(e) = result {
@@ -779,9 +789,18 @@ mod tests {
         assert!(pdf.page.contains("Categoria:"));
         fs::write(folder.join("with-logo.pdf"), pdf.bytes()).unwrap();
         let output = export(&reopened, &folder).unwrap();
-        let csv = fs::read_to_string(output.join("gabaritos.csv")).unwrap();
-        assert!(csv.lines().next().unwrap().ends_with(";Categoria"));
-        assert!(csv.contains("Mecânica"));
+        let mut files = fs::read_dir(&output)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        files.sort();
+        assert_eq!(files, ["gabarito_consolidado.pdf", "todas_as_provas.pdf"]);
+        let keys = fs::read(output.join("gabarito_consolidado.pdf")).unwrap();
+        let keys = String::from_utf8_lossy(&keys);
+        for student in &reopened.students {
+            assert!(keys.contains(&literal(&student.name)));
+            assert!(keys.contains(&literal(&format!("Q1: {}", letters(&student.questions[0])))));
+        }
         batch.title = "Avaliação com um título longo de Física e Ciências da Natureza ".repeat(4);
         batch.institution = "Instituição com nome extenso ".repeat(4);
         fs::write(
@@ -849,22 +868,6 @@ mod tests {
         }
     }
     #[test]
-    fn student_filenames_match_original() {
-        let mechanics: serde_json::Value =
-            serde_json::from_str(include_str!("../mechanics.json")).unwrap();
-        for case in mechanics["original"]["filename_cases"].as_array().unwrap() {
-            let name = case["name"].as_str().unwrap();
-            // Keep this app's existing 90-character filename limit.
-            let expected: String = case["expected"]
-                .as_str()
-                .unwrap()
-                .chars()
-                .take(90)
-                .collect();
-            assert_eq!(safe(name), expected, "original filename for {name:?}");
-        }
-    }
-    #[test]
     fn blank_answer_tables_match_original() {
         let mechanics: serde_json::Value =
             serde_json::from_str(include_str!("../mechanics.json")).unwrap();
@@ -928,7 +931,7 @@ mod tests {
                 text: String::new(),
                 values: Default::default(),
                 pictures: vec![],
-                answers: (0..8)
+                answers: (0..indices.iter().max().map_or(8, |i| (*i + 1).max(8)))
                     .map(|i| Answer {
                         text: i.to_string(),
                         correct: indices.contains(&i),
@@ -957,6 +960,39 @@ mod tests {
             data: bytes.into_inner(),
         };
         check_picture(&picture).unwrap();
+        let mut alignment = Pdf::new("Alinhamento", "Aluno");
+        alignment.picture(&picture, true);
+        let statement_command = alignment
+            .page
+            .lines()
+            .find(|line| line.contains("/Im0 Do"))
+            .unwrap();
+        let x: f64 = statement_command
+            .split_whitespace()
+            .nth(5)
+            .unwrap()
+            .parse()
+            .unwrap();
+        let width: f64 = statement_command
+            .split_whitespace()
+            .nth(1)
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert!((x + width / 2. - WIDTH / 2.).abs() < 1e-8);
+        alignment.picture(&picture, false);
+        let answer_command = alignment
+            .page
+            .lines()
+            .find(|line| line.contains("/Im1 Do"))
+            .unwrap();
+        let x: f64 = answer_command
+            .split_whitespace()
+            .nth(5)
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert!((x - MARGIN).abs() < 1e-8);
         let mut bank = examples();
         bank.questions[3].pictures.push(picture.clone());
         bank.questions[3].answers[0].pictures.push(picture);
@@ -991,19 +1027,80 @@ João",
                 .matches("/Type /Page ")
                 .count()
         };
-        let individual_pages: usize = fs::read_dir(&folder)
-            .unwrap()
-            .map(|entry| entry.unwrap().path())
-            .filter(|path| {
-                path.file_name()
-                    .unwrap()
-                    .to_string_lossy()
-                    .starts_with("prova_")
-            })
-            .map(|path| count_pages(&fs::read(path).unwrap()))
+        let individual_pages: usize = batch
+            .students
+            .iter()
+            .map(|s| count_pages(&exam(&batch, s).bytes()))
             .sum();
         assert!(individual_pages >= 2);
         assert_eq!(count_pages(&data), individual_pages);
+    }
+    #[test]
+    fn popup_preview_covers_pdf_pages_text_tables_and_images() {
+        let mut batch = generate(
+            &examples(),
+            &[("Mecânica".into(), 1)],
+            "Ana\nBruno",
+            91,
+            "Avaliação de Física",
+            "Escola",
+            "Maria",
+            "12/11/2026",
+            "A",
+        )
+        .unwrap();
+        let pic = Picture {
+            name: "Logo".into(),
+            data: include_bytes!("../assets/test-craft.png").to_vec(),
+        };
+        batch.logo = Some(pic.clone());
+        let mut question = batch.students[0].questions[0].clone();
+        question.pictures.push(pic);
+        batch.students[0].questions = vec![question; 18];
+        for student in 0..batch.students.len() {
+            let document = preview(&batch, student);
+            let pdf = exam(&batch, &batch.students[student]);
+            let pages = pdf.finish_pages();
+            assert!(document.pages.len() > 0);
+            assert_eq!(document.pages.len(), pages.len());
+            for (ops, commands) in document.pages.iter().zip(pages) {
+                let mut text_count = 0;
+                for op in ops {
+                    match op {
+                        PreviewOp::Text {
+                            x,
+                            y,
+                            text,
+                            size,
+                            bold,
+                            ..
+                        } => {
+                            text_count += 1;
+                            assert!(
+                                commands.contains(&text_commands(text, *size, *bold)),
+                                "Preview text missing from PDF: {text}"
+                            );
+                            assert!(*x >= 0. && *x <= WIDTH && *y >= 0. && *y <= HEIGHT);
+                        }
+                        PreviewOp::Image { width, height, .. } => {
+                            assert!(*width > 0. && *height > 0.);
+                        }
+                        _ => {}
+                    }
+                }
+                assert_eq!(
+                    text_count,
+                    commands.matches("BT ").count(),
+                    "Every PDF text run must appear in the popup"
+                );
+                assert_eq!(
+                    ops.iter()
+                        .filter(|op| matches!(op, PreviewOp::Image { .. }))
+                        .count(),
+                    commands.matches(" Do Q").count()
+                );
+            }
+        }
     }
     #[test]
     fn pdf_has_valid_xref_and_accents() {

@@ -1,6 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod bank_view;
 mod category_view;
+mod exam_preview;
+mod export_history;
 mod import_view;
 mod model;
 mod moodle;
@@ -24,6 +26,8 @@ const TEAL: C = C::from_rgb(31, 112, 98);
 const LINE: C = C::from_rgb(226, 232, 235);
 const PALE: C = C::from_rgb(232, 244, 239);
 const ERROR: C = C::from_rgb(190, 54, 54);
+const DRAFT_BG: C = C::from_rgb(255, 249, 219);
+const DRAFT_LINE: C = C::from_rgb(238, 217, 137);
 fn data_root() -> PathBuf {
     if let Ok(exe) = std::env::current_exe() {
         if let Some(parent) = exe.parent() {
@@ -50,13 +54,7 @@ fn now() -> u64 {
         .unwrap_or_default()
         .as_millis() as u64
 }
-fn answer_label(index: usize) -> String {
-    if index < 26 {
-        ((b'a' + index as u8) as char).to_string()
-    } else {
-        (index + 1).to_string()
-    }
-}
+
 fn card() -> egui::Frame {
     egui::Frame::new()
         .fill(C::WHITE)
@@ -261,7 +259,7 @@ fn display_preview(q: &Question, seed: u64) -> Result<Instance, String> {
     {
         return Err("Ajuste os intervalos para visualizar.".into());
     }
-    preview(q, seed)
+    review_preview(q, seed)
 }
 fn show_pictures(ui: &mut egui::Ui, pictures: &[Picture]) {
     use std::hash::{Hash, Hasher};
@@ -434,6 +432,7 @@ struct App {
     pending_validation: BTreeSet<u64>,
     bank: Bank,
     bank_errors: BTreeMap<u64, String>,
+    bank_examples: BTreeMap<u64, ValidationExample>,
     data: PathBuf,
     page: usize,
     search: String,
@@ -444,10 +443,12 @@ struct App {
     draft: Question,
     edit_id: Option<u64>,
     validation: Option<Result<String, String>>,
+    validation_example: Option<ValidationExample>,
     dirty: bool,
     setup: Setup,
     batch: Option<Batch>,
     student_preview: usize,
+    exam_preview: exam_preview::ExamPreview,
     history: Vec<PathBuf>,
     last_output: Option<PathBuf>,
     status: String,
@@ -528,6 +529,7 @@ impl App {
             .text_styles
             .insert(egui::TextStyle::Heading, egui::FontId::proportional(25.));
         cc.egui_ctx.set_style(style);
+        exam_preview::ExamPreview::install_fonts(&cc.egui_ctx);
         let data = data_root();
         let (store, mut bank, error) = match storage::BankStore::open(&data) {
             Ok((store, bank)) => (Some(store), bank, None),
@@ -562,6 +564,7 @@ impl App {
             validation_generation,
             pending_validation: bank.questions.iter().map(|q| q.id).collect(),
             bank_errors: BTreeMap::new(),
+            bank_examples: BTreeMap::new(),
             selected: bank.questions.first().map(|q| q.id),
             draft: examples().questions.remove(0),
             bank,
@@ -576,10 +579,12 @@ impl App {
             preview_seed: 17,
             edit_id: None,
             validation: None,
+            validation_example: None,
             dirty: false,
             setup,
             batch: None,
             student_preview: 0,
+            exam_preview: Default::default(),
             history: vec![],
             last_output: None,
             status: error
@@ -653,6 +658,7 @@ impl App {
             self.index = bank_view::BankIndex::new(&self.bank);
             self.bank_errors
                 .retain(|id, _| self.index.positions.contains_key(id));
+            self.bank_examples.clear();
             self.pending_validation = self.bank.questions.iter().map(|q| q.id).collect();
             self.validation_generation = self.validator.submit(&self.bank);
             true
@@ -668,16 +674,16 @@ impl App {
         }
     }
     fn refresh_history(&mut self) {
-        self.history = std::fs::read_dir(self.data.join("provas"))
-            .into_iter()
-            .flatten()
-            .filter_map(Result::ok)
-            .map(|e| e.path())
-            .filter(|p| p.join("lote.json").exists())
-            .collect();
-        self.history.sort();
-        self.history.reverse();
+        self.history = export_history::list(&self.data);
     }
+    fn remember_batch(&self, folder: &std::path::Path) -> Result<(), String> {
+        export_history::save(
+            &self.data,
+            folder,
+            self.batch.as_ref().ok_or("Não há prévia gerada.")?,
+        )
+    }
+
     fn navigate(&mut self, page: usize) {
         if self.page == 1 && self.dirty {
             self.discard_to = Some(page)
@@ -699,13 +705,15 @@ impl App {
             .unwrap_or_default();
         self.edit_id = None;
         self.validation = None;
+        self.validation_example = None;
         self.dirty = false;
         self.page = 1;
     }
     fn edit(&mut self, q: Question) {
         self.edit_id = Some(q.id);
         self.draft = q;
-        self.validation = None;
+        self.validation = self.bank_errors.get(&self.draft.id).cloned().map(Err);
+        self.validation_example = self.bank_examples.get(&self.draft.id).cloned();
         self.dirty = false;
         self.page = 1;
     }
@@ -994,7 +1002,9 @@ impl App {
                 ui.horizontal_wrapped(|ui| {
                     small(ui, "Situação");
                     for status in [bank_view::QuestionFilter::All, bank_view::QuestionFilter::Ready, bank_view::QuestionFilter::Error, bank_view::QuestionFilter::Draft] {
-                        ui.selectable_value(&mut self.question_filter, status, status.label());
+                        if status == bank_view::QuestionFilter::Draft {
+                            if ui.add(egui::Button::new(status.label()).fill(DRAFT_BG).stroke(Stroke::new(1f32,DRAFT_LINE)).selected(self.question_filter == status)).clicked() { self.question_filter = status; }
+                        } else { ui.selectable_value(&mut self.question_filter, status, status.label()); }
                     }
                 });
                 let (filtered, filter_changed) = self.index.filter(&self.bank, &self.category, &self.search, self.question_filter, &self.bank_errors, &self.pending_validation);
@@ -1018,7 +1028,7 @@ impl App {
                         let q = &self.bank.questions[position];
                         let selected=self.selected==Some(q.id);
                         let error=self.bank_errors.get(&q.id).cloned();
-                        let frame=egui::Frame::new().fill(if selected{C::from_rgb(246,252,249)}else{C::WHITE}).stroke(Stroke::new(if error.is_some(){2.}else if selected{1.5f32}else{1f32},if error.is_some(){ERROR}else if selected{C::from_rgb(93,159,137)}else{LINE})).corner_radius(9).inner_margin(10);
+                        let frame=egui::Frame::new().fill(if selected{C::from_rgb(246,252,249)}else{C::WHITE}).stroke(Stroke::new(if error.is_some(){2.}else if selected{1.5f32}else{1f32},if q.status==QuestionStatus::Draft{DRAFT_LINE}else if error.is_some(){ERROR}else if selected{C::from_rgb(93,159,137)}else{LINE})).corner_radius(9).inner_margin(10);
                         let mut checkbox_rect = egui::Rect::NOTHING;
                         let response=frame.show(ui,|ui|{
                             ui.set_width((left-24.).max(100.));
@@ -1055,14 +1065,14 @@ impl App {
                         if ui.button("Ampliar prévia").clicked(){self.expanded_preview=true;}
                         ui.add_space(12.);ui.label(R::new(&q.title).size(20.).strong());
                         small(ui,&q.category);rule(ui);
-                        if let Some(e)=&error{ui.colored_label(ERROR,"Com erro · Edite para corrigir");ui.label(e);ui.label(&q.text);}else if self.pending_validation.contains(&q.id){small(ui,"Validando questão…");ui.label(&q.text);}else if let Ok(p)=display_preview(&q,self.preview_seed){Self::show_instance(ui,&p,true);}
+                        if let Some(e)=&error{ui.colored_label(ERROR,"Com erro · Edite para corrigir");ui.label(e);Self::show_question_preview(ui,&q,self.preview_seed,self.bank_examples.get(&q.id));}else if self.pending_validation.contains(&q.id){small(ui,"Validando questão…");ui.label(&q.text);}else{Self::show_question_preview(ui,&q,self.preview_seed,None);}
                         ui.add_space(12.);
-                        if secondary(ui,"Sortear novos valores").clicked(){self.preview_seed+=1;}
+                        if !self.bank_examples.contains_key(&q.id) && secondary(ui,"Sortear novos valores").clicked(){self.preview_seed+=1;}
                         rule(ui);
                         ui.horizontal(|ui|{if primary(ui,"Editar questão").clicked(){self.edit(q.clone())}if ui.button("···").on_hover_text("Duplicar ou excluir").clicked(){ui.memory_mut(|m|m.data.insert_temp(egui::Id::new("more"),true));}});
                         let more=ui.memory(|m|m.data.get_temp::<bool>(egui::Id::new("more")).unwrap_or(false));
                         if more{ui.horizontal(|ui|{
-                            if ui.button("Duplicar").clicked(){let mut copy=q.clone();copy.id=now();copy.title.push_str(" (cópia)");self.edit_id=None;self.draft=copy;self.page=1;self.dirty=true;self.validation=None;}
+                            if ui.button("Duplicar").clicked(){let mut copy=q.clone();copy.id=now();copy.title.push_str(" (cópia)");self.edit_id=None;self.draft=copy;self.page=1;self.dirty=true;self.validation=None; self.validation_example=None;}
                             if ui.button("Excluir").clicked(){self.delete=Some(q.id)}
                         });}
                     });
@@ -1081,11 +1091,27 @@ impl App {
             small(ui, p.category.replace('/', " / "));
         }
         ui.label(R::new(&p.text).size(14.).line_height(Some(21.)));
-        show_pictures(ui, &p.pictures);
+        ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
+            ui.set_width(ui.available_width());
+            show_pictures(ui, &p.pictures);
+        });
         ui.add_space(12.);
+        let duplicates = if reveal {
+            duplicate_pairs(p)
+        } else {
+            Vec::new()
+        };
+        if !duplicates.is_empty() {
+            ui.colored_label(
+                ERROR,
+                "Alternativas iguais neste exemplo · ajuste as fórmulas ou os intervalos.",
+            );
+        }
         for (i, a) in p.answers.iter().enumerate() {
+            let duplicate = duplicates.iter().any(|&(a, b)| a == i || b == i);
             let good = reveal && a.correct;
             egui::Frame::new()
+                .stroke(Stroke::new(if duplicate { 2f32 } else { 0f32 }, ERROR))
                 .fill(if good {
                     PALE
                 } else {
@@ -1107,6 +1133,9 @@ impl App {
                             ui.label(R::new("correta").size(10.).color(TEAL));
                         }
                     });
+                    if duplicate {
+                        ui.colored_label(ERROR, "Resultado repetido");
+                    }
                     show_pictures(ui, &a.pictures);
                 });
         }
@@ -1118,6 +1147,31 @@ impl App {
                     tag(ui, &format!("{k} = {}", fmt(*v)), MUTED, BG);
                 }
             });
+        }
+    }
+    fn validate_draft(&mut self) -> Result<String, String> {
+        let (result, example) = validate_with_example(&self.draft);
+        self.validation_example = example;
+        result
+    }
+    fn show_question_preview(
+        ui: &mut egui::Ui,
+        q: &Question,
+        seed: u64,
+        example: Option<&ValidationExample>,
+    ) {
+        let result = if let Some(example) = example {
+            small(ui, "EXEMPLO QUE CAUSOU O ERRO · valores da validação");
+            example_preview(q, example)
+        } else {
+            display_preview(q, seed)
+        };
+        match result {
+            Ok(p) => Self::show_instance(ui, &p, true),
+            Err(e) => {
+                ui.colored_label(ERROR, e);
+                ui.label(&q.text);
+            }
         }
     }
     fn editor_page(&mut self, ui: &mut egui::Ui) {
@@ -1136,7 +1190,7 @@ impl App {
             });
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if primary(ui, "Salvar questão").clicked() {
-                    let result = validate(&self.draft);
+                    let result = self.validate_draft();
                     let old = self.bank.clone();
                     let mut q = self.draft.clone();
                     q.title = q.title.trim().into();
@@ -1177,20 +1231,20 @@ impl App {
                         card().stroke(Stroke::new(2f32,ERROR)).show(ui,|ui|{
                             ui.colored_label(ERROR,"Problemas na importação");
                             for issue in &self.draft.import_issues{ui.label(issue);}
-                            if ui.button("Marcar problemas da importação como revisados").clicked(){self.draft.import_issues.clear();self.dirty=true;self.validation=Some(validate(&self.draft));}
+                            if ui.button("Marcar problemas da importação como revisados").clicked(){self.draft.import_issues.clear();self.dirty=true;self.validation=Some(self.validate_draft());}
                         });
                         ui.add_space(12.);
                     }
                     if let Some(xml)=&self.draft.source_xml{
                         if ui.button("Copiar XML original da questão").clicked(){ui.ctx().copy_text(xml.clone());}
                     }
-                    card().show(ui,|ui|{
+                    card().stroke(Stroke::new(1f32,if self.draft.status==QuestionStatus::Draft{DRAFT_LINE}else{LINE})).show(ui,|ui|{
                         ui.label(R::new("1   Identificação e enunciado").size(16.).strong());ui.add_space(10.);
                         let before=self.draft.clone();
                         field(ui,"Título da questão",&mut self.draft.title);
                         ui.horizontal(|ui| {
                             small(ui,"Status da questão");
-                            ui.selectable_value(&mut self.draft.status,QuestionStatus::Draft,"Rascunho");
+                            if ui.add(egui::Button::new("Rascunho").fill(DRAFT_BG).stroke(Stroke::new(1f32,DRAFT_LINE)).selected(self.draft.status==QuestionStatus::Draft)).clicked(){self.draft.status=QuestionStatus::Draft;}
                             ui.selectable_value(&mut self.draft.status,QuestionStatus::Ready,"Pronta");
                         });
                         small(ui,"Somente questões prontas e sem erros participam das provas.");
@@ -1205,16 +1259,16 @@ impl App {
                         small(ui,"Enunciado · use {d} para inserir uma variável");
                         ui.add(egui::TextEdit::multiline(&mut self.draft.text).background_color(C::from_rgb(246,248,250)).desired_width(f32::INFINITY).desired_rows(4).margin(Vec2::splat(10.)));
                         ui.horizontal(|ui|{
-                            if ui.button("+ Imagem no enunciado").clicked(){match pick_picture(){Ok(Some(p))=>{self.draft.pictures.push(p);self.dirty=true;self.validation=None;},Ok(None)=>{},Err(e)=>self.validation=Some(Err(e))}}
+                            if ui.button("+ Imagem no enunciado").clicked(){match pick_picture(){Ok(Some(p))=>{self.draft.pictures.push(p);self.dirty=true;self.validation=None; self.validation_example=None;},Ok(None)=>{},Err(e)=>self.validation=Some(Err(e))}}
                             small(ui,format!("{} imagens · PNG / JPG",self.draft.pictures.len()));
                         });
                         let mut remove=None;for (i,p) in self.draft.pictures.iter().enumerate(){ui.horizontal(|ui|{small(ui,&p.name);if ui.button("Remover").clicked(){remove=Some(i)}});}
-                        if let Some(i)=remove{self.draft.pictures.remove(i);self.dirty=true;self.validation=None;}
-                        if before.title!=self.draft.title||before.category!=self.draft.category||before.text!=self.draft.text{self.dirty=true;self.validation=None;}
+                        if let Some(i)=remove{self.draft.pictures.remove(i);self.dirty=true;self.validation=None; self.validation_example=None;}
+                        if before.title!=self.draft.title||before.category!=self.draft.category||before.text!=self.draft.text{self.dirty=true;self.validation=None; self.validation_example=None;}
                     });
                     ui.add_space(12.);
                     card().show(ui,|ui|{
-                        ui.horizontal(|ui|{ui.label(R::new("2   Variáveis").size(16.).strong());ui.with_layout(egui::Layout::right_to_left(egui::Align::Center),|ui|{if ui.button("+ Adicionar").clicked(){self.draft.variables.push(Variable{name:format!("x{}",self.draft.variables.len()+1),min:1.,max:10.,decimals:0,values:vec![]});self.dirty=true;self.validation=None;}});});
+                        ui.horizontal(|ui|{ui.label(R::new("2   Variáveis").size(16.).strong());ui.with_layout(egui::Layout::right_to_left(egui::Align::Center),|ui|{if ui.button("+ Adicionar").clicked(){self.draft.variables.push(Variable{name:format!("x{}",self.draft.variables.len()+1),min:1.,max:10.,decimals:0,values:vec![]});self.dirty=true;self.validation=None; self.validation_example=None;}});});
                         small(ui,"Valores em passos de 1, 0,1 ou 0,01, conforme as casas decimais.");
                         ui.add_space(9.);let mut remove=None;
                         egui::Grid::new("vars").spacing([12.,10.]).num_columns(5).show(ui,|ui|{
@@ -1227,10 +1281,10 @@ impl App {
                                 if ui.button("×").clicked(){remove=Some(i)}
                                 ui.end_row();
                                 if !v.values.is_empty(){small(ui,format!("{} valores importados",v.values.len()));if ui.button("Usar intervalo").clicked(){v.values.clear();changed=true;}ui.end_row();}
-                                if changed{self.dirty=true;self.validation=None;}
+                                if changed{self.dirty=true;self.validation=None; self.validation_example=None;}
                             }
                         });
-                        if let Some(i)=remove{self.draft.variables.remove(i);self.dirty=true;self.validation=None;}
+                        if let Some(i)=remove{self.draft.variables.remove(i);self.dirty=true;self.validation=None; self.validation_example=None;}
                     });
                     ui.add_space(12.);
                     card().show(ui,|ui|{
@@ -1243,15 +1297,15 @@ impl App {
                                 changed|=ui.add_sized([ui.available_width()-80.,32.],egui::TextEdit::singleline(&mut a.text).background_color(C::from_rgb(246,248,250)).font(egui::TextStyle::Monospace)).changed();
                                 if ui.button("Img").on_hover_text("Adicionar imagem à alternativa").clicked(){match pick_picture(){Ok(Some(p))=>{a.pictures.push(p);changed=true;},Ok(None)=>{},Err(e)=>self.validation=Some(Err(e))}}
                                 if ui.button("×").clicked(){remove=Some(i)}
-                                if changed{self.dirty=true;self.validation=None;}
+                                if changed{self.dirty=true;self.validation=None; self.validation_example=None;}
                             });
                         }
                         for (i,a) in self.draft.answers.iter_mut().enumerate(){
-                            if !a.pictures.is_empty(){ui.horizontal(|ui|{small(ui,format!("Alternativa {}: {} imagem(ns)",answer_label(i),a.pictures.len()));if ui.button("Remover imagens").clicked(){a.pictures.clear();self.dirty=true;self.validation=None;}});}
+                            if !a.pictures.is_empty(){ui.horizontal(|ui|{small(ui,format!("Alternativa {}: {} imagem(ns)",answer_label(i),a.pictures.len()));if ui.button("Remover imagens").clicked(){a.pictures.clear();self.dirty=true;self.validation=None; self.validation_example=None;}});}
                         }
-                        if let Some(i)=remove{self.draft.answers.remove(i);self.dirty=true;self.validation=None;}
-                        if self.draft.answers.len()<8&&ui.button("+ Adicionar alternativa").clicked(){self.draft.answers.push(Answer{text:String::new(),correct:false,pictures:vec![]});self.dirty=true;self.validation=None;}
-                        rule(ui);if secondary(ui,"Validar questão").clicked(){self.validation=Some(validate(&self.draft))}
+                        if let Some(i)=remove{self.draft.answers.remove(i);self.dirty=true;self.validation=None; self.validation_example=None;}
+                        if self.draft.answers.len()<8&&ui.button("+ Adicionar alternativa").clicked(){self.draft.answers.push(Answer{text:String::new(),correct:false,pictures:vec![]});self.dirty=true;self.validation=None; self.validation_example=None;}
+                        rule(ui);if secondary(ui,"Validar questão").clicked(){self.validation=Some(self.validate_draft())}
                     });
                 });
             });
@@ -1264,10 +1318,8 @@ impl App {
                         small(ui,"PRÉVIA AO VIVO");
                         if ui.button("Ampliar prévia").clicked(){self.expanded_preview=true;}
                         ui.add_space(12.);
-                        let safe= self.draft.variables.len()<=12 && self.draft.answers.len()<=8 && self.draft.variables.iter().all(|v|v.decimals<=6&&v.min.is_finite()&&v.max.is_finite()&&v.min<=v.max&&v.count()>0&&v.count()<usize::MAX/2);
-                        if safe{match preview(&self.draft,self.preview_seed){Ok(p)=>Self::show_instance(ui,&p,true),Err(e)=>{ui.colored_label(C::from_rgb(173,89,50),e);}}}
-                        else{small(ui,"Ajuste os intervalos para visualizar.");}
-                        ui.add_space(10.);if secondary(ui,"Sortear valores").clicked(){self.preview_seed+=1;}
+                        Self::show_question_preview(ui,&self.draft,self.preview_seed,self.validation_example.as_ref());
+                        ui.add_space(10.);if self.validation_example.is_none() && secondary(ui,"Sortear valores").clicked(){self.preview_seed+=1;}
                     });
                     if let Some(result)=&self.validation{
                         ui.add_space(12.);egui::Frame::new().fill(if result.is_ok(){PALE}else{C::from_rgb(255,238,229)}).corner_radius(9).inner_margin(16).show(ui,|ui|{
@@ -1278,9 +1330,9 @@ impl App {
                     ui.add_space(12.);
                     card().show(ui,|ui|{
                         ui.label(R::new("Ajuda com fórmulas").size(13.).strong());
-                        small(ui,"Operações: +  -  *  /  ^\nFunções: sqrt, abs, sin, cos, tan,\nln, log, log10, exp\nConstantes: pi, e");
+                        small(ui,"Operações: +  -  *  /  ^\nFunções: sqrt, abs, sin, cos, tan,\nln, log, log10, exp, rnd(min,max)\nConstantes: pi, e");
                         rule(ui);small(ui,"Exemplo de enunciado:\nUm carro percorre {d} m em {t} s.\n\nExemplo de alternativa:\n{={d}/{t}} m/s");
-                        small(ui,"Use ponto ou vírgula decimal. Funções recebem um argumento. Os resultados aparecem com até duas casas.");
+                        small(ui,"Use ponto ou vírgula decimal nas fórmulas. Em rnd(min,max), separe os limites por vírgula e use ponto decimal: {={d}*rnd(0.8,1.2)}. Limites iguais reutilizam o mesmo fator no enunciado e nas alternativas desta versão. O sorteio aceita decimais e muda a cada versão. Resultados com até duas casas.");
                     });
                 });
             });
@@ -1307,6 +1359,7 @@ impl App {
                     self.setup.question_order.clear();
                 }
                 self.batch = Some(b);
+                self.exam_preview.invalidate();
                 self.student_preview = 0;
                 self.notify(
                     "Prévia pronta. Confira uma versão por aluno antes de exportar.",
@@ -1324,23 +1377,22 @@ impl App {
         ui.horizontal(|ui|{
             ui.vertical(|ui|{ui.label(R::new("Criar prova").size(29.).strong());small(ui,"Versões diferentes. A mesma facilidade para corrigir.");});
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center),|ui|{
-                if primary(ui,"Gerar PDFs + Moodle").clicked(){
+                if primary(ui,"Exportar PDFs").clicked(){
                     if self.batch.is_some()||self.build_batch(){
                         if let Some(base)=rfd::FileDialog::new().set_directory(self.data.join("provas")).pick_folder(){
-                            match pdf::export(self.batch.as_ref().unwrap(),&base){Ok(p)=>{self.last_output=Some(p);self.notify("PDFs, gabaritos e XML Moodle salvos com sucesso. Veja os arquivos locais.",false);self.refresh_history();},Err(e)=>self.notify(e,true)}
+                            match pdf::export(self.batch.as_ref().unwrap(),&base){Ok(p)=>{let saved=self.remember_batch(&p);self.last_output=Some(p);match saved {Ok(())=>self.notify("Provas e gabarito consolidado salvos em PDF.",false),Err(e)=>self.notify(format!("PDFs salvos. Não foi possível guardar o histórico: {e}"),true)}self.refresh_history();},Err(e)=>self.notify(e,true)}
                         }
                     }
                 }
-                if secondary(ui,"Conferir prévia").clicked(){self.build_batch();}
+                if secondary(ui,"Conferir prévia").clicked(){if self.batch.is_some()||self.build_batch(){self.exam_preview.open=true;}}
             });
         });
         ui.add_space(20.);
         let w = ui.available_width();
-        let side = (w * 0.43).min(440.);
+        let side = (w * 0.26).clamp(230., 300.);
         let content_height = ui.available_height();
         let mut changed = false;
         let previous_plan = self.setup.plan.clone();
-        let mut question_move = None;
         ui.horizontal_top(|ui|{
             ui.allocate_ui_with_layout(Vec2::new(w-side-22.,content_height),egui::Layout::top_down(egui::Align::Min),|ui|{
                 egui::ScrollArea::vertical().id_salt("exam_setup").show(ui,|ui|{
@@ -1380,14 +1432,17 @@ impl App {
                             self.proof_category_focus = true;
                         }
                         let len=self.setup.plan.len();let mut mv=None;let mut remove=None;
-                        let category_width=(ui.available_width()-235.).max(90.);
-                        egui::ScrollArea::vertical().id_salt("selected_categories").max_height(180.).show(ui,|ui|{
+                        let category_width=(ui.available_width()-255.).max(120.);
+                        egui::ScrollArea::vertical().id_salt("selected_categories").max_height((content_height*0.52).max(320.)).show(ui,|ui|{
                         ui.scope(|ui| { ui.spacing_mut().interact_size.y=28.; ui.spacing_mut().button_padding=Vec2::new(6.,4.);
-                        egui::Grid::new("category_plan").spacing([5.,4.]).show(ui,|ui|{
+                        egui::Grid::new("category_plan").spacing([10.,12.]).show(ui,|ui|{
                             for s in ["Categoria","Disponíveis","Sortear","","",""]{small(ui,s)}ui.end_row();
                             for (i,(cat,n)) in self.setup.plan.iter_mut().enumerate(){
                                 let count=self.index.ready_counts.get(cat).copied().unwrap_or(0);
-                                ui.add_sized([category_width,28.],egui::Label::new(format!("{} ({})",cat.replace('/'," / "),self.index.category_counts.get(cat).copied().unwrap_or(0))).wrap());small(ui,count.to_string());let limit=if self.pending_validation.is_empty(){count}else{count.max(*n)};changed|=ui.add_enabled(self.pending_validation.is_empty(),egui::DragValue::new(n).range(0..=limit)).changed();
+                                ui.allocate_ui_with_layout(Vec2::new(category_width,40.),egui::Layout::top_down(egui::Align::Min),|ui|{
+                                    ui.label(R::new(cat.rsplit('/').next().unwrap_or(cat)).strong()).on_hover_text(cat.replace('/'," / "));
+                                    if let Some((parent,_))=cat.rsplit_once('/'){small(ui,parent.replace('/'," / "));}
+                                });small(ui,count.to_string());let limit=if self.pending_validation.is_empty(){count}else{count.max(*n)};changed|=ui.add_enabled(self.pending_validation.is_empty(),egui::DragValue::new(n).range(0..=limit)).changed();
                                 if position_button(ui,true,i>0,"Adiantar categoria").clicked(){mv=Some((i,i-1))}
                                 if position_button(ui,false,i+1<len,"Postergar categoria").clicked(){mv=Some((i,i+1))}
                                 if ui.button("×").on_hover_text("Retirar categoria desta prova").clicked(){remove=Some(i);}
@@ -1416,38 +1471,22 @@ impl App {
             ui.allocate_ui_with_layout(Vec2::new(side,content_height),egui::Layout::top_down(egui::Align::Min),|ui|{
                 egui::ScrollArea::vertical().id_salt("exam_preview").show(ui,|ui|{
                     card().show(ui,|ui|{
-                        small(ui,"PRÉVIA INDIVIDUAL");
+                        ui.label(R::new("Prévia em PDF").size(18.).strong());
+                        ui.add_space(10.);
                         if let Some(batch)=&self.batch{
-                            ui.add_space(8.);egui::ComboBox::from_id_salt("student").selected_text(&batch.students[self.student_preview].name).width(side-70.).show_ui(ui,|ui|{for (i,s) in batch.students.iter().enumerate(){ui.selectable_value(&mut self.student_preview,i,&s.name);}});
-                            rule(ui);
-                            egui::Frame::new().fill(PALE).corner_radius(8).inner_margin(14).show(ui,|ui| {
-                                if let Some(logo)=&batch.logo{show_pictures(ui,std::slice::from_ref(logo));}
-                                small(ui,&batch.institution);ui.label(R::new(&batch.title).size(21.).strong().color(TEAL));
-                                small(ui,format!("Professor(a): {}",batch.teacher));
-                                small(ui,format!("Turma: {}   ·   Data: {}",batch.class_name,batch.date));
-                                ui.separator();ui.label(R::new(format!("Aluno(a): {}",batch.students[self.student_preview].name)).strong());
-                            });rule(ui);
-                            small(ui,"Use as setas ao lado de cada questão para mudar sua posição em todas as versões.");
-                            let count=batch.students[self.student_preview].questions.len();
-                            for (i,q) in batch.students[self.student_preview].questions.iter().enumerate(){
-                                ui.push_id(("question_position",i),|ui| {ui.horizontal(|ui| {
-                                    ui.label(R::new(format!("Questão {}",i+1)).strong());
-                                    if position_button(ui,true,i>0,"Adiantar questão em todas as versões").clicked(){question_move=Some((i,i-1));}
-                                    if position_button(ui,false,i+1<count,"Postergar questão em todas as versões").clicked(){question_move=Some((i,i+1));}
-                                });});
-                                Self::show_instance(ui,q,false);ui.add_space(15.);
-                            }
-                            rule(ui);small(ui,"GABARITO DESTA VERSÃO");
-                            for (i,q) in batch.students[self.student_preview].questions.iter().enumerate(){ui.label(R::new(format!("Q{}   {}",i+1,pdf::letters(q))).color(TEAL));}
+                            small(ui,format!("{} alunos · {} questões por versão",batch.students.len(),batch.students[0].questions.len()));
+                            ui.add_space(12.);
+                            if primary(ui,"Abrir prévia").clicked(){self.exam_preview.open=true;}
+                            small(ui,"Confira as páginas, troque de aluno e ajuste a ordem das questões na janela de prévia.");
                         }else{
-                            ui.add_space(25.);icon(ui,1,C::from_rgb(148,174,165),44.);ui.add_space(14.);ui.label(R::new("Sua prova começa aqui").size(18.).strong());
                             ui.label("Preencha os dados, escolha as quantidades e adicione os alunos.");
-                            ui.add_space(10.);small(ui,"Clique em Conferir prévia para ver as versões individuais.");ui.add_space(30.);
+                            ui.add_space(12.);
+                            small(ui,"Clique em Conferir prévia para abrir as páginas da prova.");
                         }
                     });ui.add_space(12.);
                     egui::Frame::new().fill(PALE).corner_radius(9).inner_margin(18).show(ui,|ui|{
                         ui.label(R::new("O que será salvo").strong().color(TEAL));
-                        small(ui,"• Uma prova em PDF por aluno\n• Um gabarito individual por aluno\n• Todas as provas em um PDF\n• Gabarito consolidado em PDF e CSV\n• XML Moodle por aluno, com os mesmos valores e alternativas\n• Registro dos valores sorteados (JSON)");
+                        small(ui,"• Todas as provas em um PDF\n• Gabarito consolidado em PDF");
                     });
                 });
             });
@@ -1456,15 +1495,10 @@ impl App {
             self.setup.question_order.clear();
         }
         if changed {
+            self.exam_preview.open = false;
+            self.exam_preview.invalidate();
             self.batch = None;
             self.notify("Dados alterados. Confira uma nova prévia.", false);
-        } else if let Some((from, to)) = question_move {
-            if let Some(batch) = &mut self.batch {
-                if batch.move_question(from, to) {
-                    self.setup.question_order = batch.question_order.clone();
-                    self.notify("Posição atualizada em todas as provas e gabaritos.", false);
-                }
-            }
         }
     }
     fn open_folder(&mut self, p: PathBuf) {
@@ -1498,11 +1532,11 @@ impl App {
                 small(ui,"Importação: JSON deste aplicativo ou XML Moodle (calculatedmulti e multichoice), com imagens PNG/JPG incorporadas. Referências a imagens externas são recusadas com aviso.");
             });ui.add_space(18.);
             if let Some(p)=self.last_output.clone(){card().show(ui,|ui|{ui.label(R::new("Último lote exportado").size(17.).strong().color(TEAL));ui.label(p.display().to_string());if primary(ui,"Abrir arquivos").clicked(){self.open_folder(p.clone())}if ui.button("Carregar prévia deste lote").clicked(){self.load_batch(&p)}});ui.add_space(16.);}
-            ui.label(R::new("Provas salvas na pasta padrão").size(19.).strong());small(ui,"Lotes exportados em outras pastas podem ser abertos pelo registro JSON.");
+            ui.label(R::new("Provas salvas na pasta padrão").size(19.).strong());small(ui,"O histórico fica salvo neste computador, incluindo os lotes exportados em outras pastas.");
             ui.horizontal(|ui|{if secondary(ui,"Abrir registro de lote").clicked(){if let Some(p)=rfd::FileDialog::new().add_filter("Registro do lote",&["json"]).pick_file(){if let Some(parent)=p.parent(){self.load_batch_file(&p,parent.to_path_buf());}}}if ui.button("Atualizar").clicked(){self.refresh_history()}});
             for p in self.history.clone(){
                 card().show(ui,|ui|{
-                    let batch=std::fs::read(p.join("lote.json")).ok().and_then(|b|serde_json::from_slice::<Batch>(&b).ok());
+                    let batch=export_history::read(&self.data,&p).ok();
                     if let Some(b)=batch{
                         ui.horizontal(|ui|{ui.vertical(|ui|{ui.label(R::new(&b.title).strong());small(ui,format!("{} alunos · identificador {}",b.students.len(),b.seed));});ui.with_layout(egui::Layout::right_to_left(egui::Align::Center),|ui|{if secondary(ui,"Abrir pasta").clicked(){self.open_folder(p.clone())}if ui.button("Ver versões").clicked(){self.load_batch(&p);}});});
                     }
@@ -1512,12 +1546,16 @@ impl App {
         });
     }
     fn load_batch(&mut self, p: &std::path::Path) {
-        self.load_batch_file(&p.join("lote.json"), p.to_path_buf())
+        let result = export_history::read(&self.data, p);
+        self.restore_batch(result, p.to_path_buf());
     }
     fn load_batch_file(&mut self, p: &std::path::Path, folder: PathBuf) {
         let result = std::fs::read(p)
             .map_err(|e| e.to_string())
             .and_then(|b| serde_json::from_slice::<Batch>(&b).map_err(|e| e.to_string()));
+        self.restore_batch(result, folder);
+    }
+    fn restore_batch(&mut self, result: Result<Batch, String>, folder: PathBuf) {
         match result {
             Ok(b)
                 if b.version == 1
@@ -1561,11 +1599,13 @@ impl App {
                 self.setup.date = b.date.clone();
                 self.setup.logo = b.logo.clone();
                 self.batch = Some(b);
+                self.exam_preview.invalidate();
+                self.exam_preview.open = true;
                 self.student_preview = 0;
                 self.last_output = Some(folder);
                 self.page = 2;
                 self.notify(
-                    "Registro carregado com os valores e alternativas originais.",
+                    "Prévia carregada com os valores e alternativas originais.",
                     false,
                 );
             }
@@ -1634,6 +1674,14 @@ impl App {
         });
     }
     fn dialogs(&mut self, ctx: &egui::Context) {
+        if let Some(batch) = &mut self.batch {
+            if self
+                .exam_preview
+                .show(ctx, batch, &mut self.student_preview)
+            {
+                self.setup.question_order = batch.question_order.clone();
+            }
+        }
         self.import_dialog(ctx);
         self.category_delete_dialog(ctx);
         if self.proof_category_dialog {
@@ -1836,7 +1884,7 @@ impl App {
                     if ui.button("Nova categoria").clicked(){self.category_edit=None;self.category_name.clear();self.category_parent.clear();self.category_error=None;}
                     if let Some(path)=self.category_edit.clone(){
                         if ui.button(if self.category_for_editor {"Usar na questão"} else {"Filtrar no banco"}).clicked(){
-                            if self.category_for_editor{self.draft.category=path.clone();self.dirty=true;self.validation=None;}else{self.category=path.clone();self.search.clear();}
+                            if self.category_for_editor{self.draft.category=path.clone();self.dirty=true;self.validation=None; self.validation_example=None;}else{self.category=path.clone();self.search.clear();}
                             self.category_dialog=false;
                         }
                         if ui.button("Excluir categoria...").clicked(){
@@ -1915,7 +1963,7 @@ impl App {
                                     if self.category_for_editor {
                                         self.draft.category = path.clone();
                                         self.dirty = true;
-                                        self.validation = None;
+                                        self.validation=None; self.validation_example=None;
                                     } else {
                                         // Creating a category must not hide the rest of the bank.
                                         self.category = "Todas".into();
@@ -1966,15 +2014,14 @@ impl App {
                                 ui.heading(&q.title);
                                 small(ui, q.category.replace('/', " / "));
                                 rule(ui);
-                                match display_preview(q, self.preview_seed) {
-                                    Ok(p) => Self::show_instance(ui, &p, true),
-                                    Err(e) => {
-                                        ui.colored_label(ERROR, e);
-                                        ui.label(&q.text);
-                                    }
-                                }
+                                let example = if self.page == 1 {
+                                    self.validation_example.as_ref()
+                                } else {
+                                    self.bank_examples.get(&q.id)
+                                };
+                                Self::show_question_preview(ui, q, self.preview_seed, example);
                                 ui.add_space(16.);
-                                if secondary(ui, "Sortear valores").clicked() {
+                                if example.is_none() && secondary(ui, "Sortear valores").clicked() {
                                     self.preview_seed += 1;
                                 }
                             } else {
@@ -2078,6 +2125,11 @@ impl eframe::App for App {
             if result.generation == self.validation_generation {
                 self.index.invalidate_filter();
                 self.pending_validation.remove(&result.id);
+                if let Some(example) = result.example {
+                    self.bank_examples.insert(result.id, example);
+                } else {
+                    self.bank_examples.remove(&result.id);
+                }
                 if let Some(error) = result.error {
                     self.bank_errors.insert(result.id, error);
                 } else {

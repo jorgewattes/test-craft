@@ -1,4 +1,129 @@
+## Atualização 0.4.5 — prova, prévia e exportação
+
+A criação de prova usa categorias recolhíveis e uma área maior para as quantidades. A prévia popup reutiliza as operações de layout do PDF (texto, tabelas, linhas e imagens), com mesma paginação e coordenadas; fontes de tela podem variar ligeiramente. A exportação produz somente todas_as_provas.pdf e gabarito_consolidado.pdf. XML individual, PDFs individuais, CSV e lote.json na pasta de saída foram retirados por solicitação do produto; os registros ficam internamente em registros-provas e o histórico legado continua legível. A sanitização dos nomes de arquivos por aluno descrita nas revisões históricas deixou de ser usada porque esses arquivos não são mais gerados.
+
 # Regras verificadas no original
+
+## Revisão Deep do original — 12/11/2026
+
+O alvo foi reaberto com core_target_open: C:/dev/MoodTest/MoodTest.py,
+SHA-256 c2b9ff9719e5ca4b7c837a22da5eae6a3bd2811d9eb17ef6895a730c038f1541.
+O diretório original contém esse programa Python e nenhum executável nativo.
+As consultas native_strings_find para nomes, configurações e mensagens, as
+referências nativas e cada native_function_pseudocode aguardado retornaram
+not_supported: o arquivo é texto, não código de máquina. O registro em
+[checks/deep-review-2026-11-12.json](checks/deep-review-2026-11-12.json)
+guarda os resultados e leituras do original. Não houve descompilação nativa;
+endereços virtuais continuam indisponíveis. As localizações abaixo são offsets
+hexadecimais dos bytes do fonte, com as quebras CRLF preservadas.
+
+| Referência seguida no original | Localização no fonte | Regra confirmada |
+|---|---|---|
+| Question._processar_texto → _replace_calculated_blocks → avaliar_expressao_com_variaveis | 0x8f5a → 0x3984 → 0x1aa2 | Avaliar blocos antes de substituir variáveis simples; sempre formatar com duas casas. |
+| avaliar_expressao → _preprocess_expr / _eval_ast | 0x13bd → 0x128e / 0xc7b | Trim, ^ → **, ln( → log( e só então remoção de espaços; +, -, *, /, potência e funções permitidas. |
+| formatar_numero_pt | 0x1501 | Decimal(str(x)).quantize(10^-casas, ROUND_HALF_UP); milhar ponto e decimal vírgula; omitir parte decimal arredondada inteira. |
+| Dataset.sample ← Question.instantiate | 0x832c ← 0x888e | Escolha independente por dataset; entradas repetidas conservam peso; embaralhar pares e remapear corretas. |
+| Exam.export_pdf | 0x95d0 | A4 = (210/25,4×72) por (297/25,4×72) pt; margens originais = 2/2,54×72 pt. O produto mantém a alteração solicitada para 1,5 cm. |
+| add_blank_answer_tables ← Exam._story | 0x7e27 | Blocos de 15 respostas, duas linhas, grade preta de 0,75 pt e cabeçalho cinza. |
+| Mensagem Adicione alunos antes de gerar. → App.gerar_provas | 0x13567 → 0x13504 | Exigir alunos antes da geração; depois verificar questões e plano. |
+| indices_para_letras → letters_for | 0xd0f7 → 0x7c98 | Alfabeto minúsculo com continuação em aa, ab…; unir corretas com /; nenhuma correta gera -. |
+
+A continuação das letras revelou uma divergência real. Para índice zero-based i,
+o original antepõe chr(97 + i % 26), depois calcula i = i // 26 - 1 e
+repete enquanto i ≥ 0. Assim, 25 → z, 26 → aa, 51 → az, 52 → ba,
+701 → zz e 702 → aaa. A reconstrução devolvia 27 no índice 26 e o
+caminho separado do PDF produzia caracteres como { e |.
+
+model::answer_label agora aplica essa regra e é compartilhado pela diagramação
+das alternativas e pelas chaves PDF/CSV. O limite de autoria de oito alternativas
+continua sendo uma decisão de produto. A extração de somente letters_for e
+indices_para_letras via AST gerou 703 rótulos e sete casos de gabarito, sem
+importar o módulo, abrir GUI ou executar o instalador do original. Os resultados
+ficam em mechanics.json e
+[checks/deep-answer-label-oracle.json](checks/deep-answer-label-oracle.json).
+O teste novo falhou antes da correção (27 versus aa); o teste de gabarito
+também expôs o cálculo separado no PDF, que foi substituído pela função comum.
+
+Evidências: ev_1e7870c789bcb2f1369b6fdc041b028120dd858896a77c2c0f9172ad3f0064a5
+(letras e tabela), ev_9397f70173d3f730d56211fe0777012f69a1709d42d72b21f1f9f86f3863350f
+(avaliação e formatação), ev_2055573f4ac28482b9a317bd93ccc23aa883967f94e8c7c66343f97713189f4b
+(instanciação, texto e PDF), ev_a3ec74a8a8c77d8aa648d5c992f63ab93d92742108a8348cbcc6e24464795927
+(mensagem e offset).
+
+Verificação desta revisão: os 64 testes passaram, incluindo 703 rótulos e sete
+casos de gabarito do original. cargo build --release --locked concluiu em 1 min
+05 s; cargo fmt --check e git diff --check passaram. Uma chamada de rebuild_check
+(wait_minutes: 1) confirmou build e abertura/captura (2070 × 1350). A folha de
+mecânicas foi lida (35 valores; 32 com fonte e três estimados), mas o Craft não
+comparou medições de comportamento em execução com esses valores; essa comparação
+permanece não verificada. Relatório em
+[checks/deep-answer-label-verification.json](checks/deep-answer-label-verification.json).
+
+## Alterações solicitadas de produto — 12/11/2026
+
+Figuras de enunciados centralizadas nas prévias, PDF A4 e Moodle XML, preservando proporções e limites de tamanho. O alinhamento de figuras das alternativas e do logo é mantido.
+
+`rnd(min,max)` acrescenta um fator decimal uniforme limitado ao intervalo inclusivo. A vírgula separa os argumentos; limites decimais usam ponto. Os limites podem ser expressões, incluindo variáveis; devem ser finitos, estar em ordem e ter magnitude até 10^15. O sorteio usa a mesma semente do lote. Limites numéricos iguais compartilham um fator na mesma instância, preservando a consistência entre enunciado e respostas. Os fatores são guardados em `Instance.values`. A validação de questões com rnd usa 256 amostras e verifica novamente cada instância antes da geração.
+
+Erros de duplicidade mostram letras, resultado apresentado, fontes de texto/fórmula e valores exatos, incluindo fatores aleatórios. A comparação continua ignorando caixa e espaços nas pontas e considerando conteúdo das imagens. Um exemplo leve com valores e estado do gerador reproduz o caso na prévia normal e ampliada, sem copiar imagens no laço de validação. O banco calcula e armazena o exemplo no trabalhador serial; editar campos invalida o exemplo anterior.
+
+Essas extensões foram solicitadas pelo usuário e não são inferidas do original Python. Testes cobrem limites e sintaxe de rnd, repetibilidade, fator compartilhado, colisões após arredondamento e em combinações posteriores, reprodução do exemplo e coordenadas de centralização no PDF e estilo no XML.
+
+
+Verificação de 12/11/2026: `cargo test --locked` passou com 63 testes; `cargo build --release --locked` concluiu sem erros (2 min 03 s). `cargo fmt --check` e `git diff --check` passaram. Uma chamada de `rebuild_check` com `wait_minutes: 1` aprovou build e inicialização/captura (2070 × 1350); a comparação de comportamento com `mechanics.json` permaneceu não verificada. A captura foi inspecionada e mostra a interface desenhada durante a validação em segundo plano. Não se declara aprovação completa das mecânicas.
+
+## Conferência mais recente: substituição numérica (11/11/2026)
+
+Deep mode confirmado e o programa principal aberto por `core_target_open`:
+`C:/dev/MoodTest/MoodTest.py`, 83.212 bytes, SHA-256
+`c2b9ff9719e5ca4b7c837a22da5eae6a3bd2811d9eb17ef6895a730c038f1541`.
+Foram aguardadas individualmente buscas `native_strings_find` de nomes,
+configurações e mensagens, referências de nove funções e 27 chamadas
+`native_function_pseudocode`. [Resultados integrais](checks/deep-placeholder-tools.json).
+**Todas as consultas nativas retornaram `not_supported: Unknown file magic`.
+O original é fonte Python; não houve decompilação nativa e não existem endereços
+de funções nativas neste alvo. Os locais abaixo são offsets de bytes;
+`native_address=null`.**
+
+As chamadas foram seguidas no fonte: `Question._processar_texto` (`0x8f5a`)
+→ `_replace_calculated_blocks` (`0x3984`)
+→ `avaliar_expressao_com_variaveis` (`0x1aa2`)
+→ `avaliar_expressao` (`0x13bd`)
+→ `_preprocess_expr` (`0x128e`) / `_eval_ast` (`0xc7b`).
+O [mapa do fonte](checks/source-placeholder-review.json) contém o texto integral,
+as chamadas, linhas e offsets de 110 definições, incluindo classes e funções internas.
+A tabela da seção seguinte mantém as regras de importação, sorteio, gabaritos e PDF.
+
+| Local real no fonte | Regra recuperada e aplicada |
+|---|---|
+| `avaliar_expressao_com_variaveis` `0x1aa2`, substituição em `0x1bed` | Substituir `{nome}` por `str(valores[nome].value)` antes do parse, sem parênteses. Datasets são floats: 3 vira `3.0`, −2 vira `-2.0`; manter `.0` e a notação científica na expressão. |
+| `_eval_ast` `0xc7b` / parse em `0x14a5` | Com x=3, `{x}_0` vira `3.0_0` e resulta **3**, não 30. `{x}.5` e `{x}{y}` são sintaxe inválida; o produto deve impedir sua geração. Com x=−2, `{x}^2=−4` e `({x})^2=4`. |
+| `Question._processar_texto` `0x8f5a`; `formatar_numero_pt` `0x1501` | A grafia interna da substituição não altera a apresentação: duas casas, `ROUND_HALF_UP`, milhar ponto, decimal vírgula e remoção de frações nulas. |
+
+Evidências: definição `ev_4241cf1461a989c12351914de63fc8be5ac049efa25d037c9b41e8557fcb86e1`;
+substituição `ev_86fb0f5b7d5940a157d86b27fbd98e74cfa869fd03524a89413c4d76e4e3dd93`;
+chamador `ev_973b5764af8a0c1938e69a12fa98a1284f88b1c87ba59643433bedba6f0edb74`.
+
+Os 42 casos em `mechanics.json::original.placeholder_spelling_cases` vieram de
+cinco definições isoladas do original, sem importar o módulo nem abrir a GUI.
+[Reprodução](checks/review-placeholder-spelling.py).
+O teste `placeholder_spelling_matches_original` falhou antes da correção:
+esperado 3, obtido 30 para `{x}_0`. Agora passa para avaliação e renderização,
+incluindo negativos, zero, notação científica e fórmulas inválidas.
+`src/model.rs::eval` preserva a grafia float usada pelo editor, validação,
+prévia e geração. O limite de resultado de 10^15 continua sendo uma decisão
+explícita do produto; os casos acima dele verificam rejeição.
+
+Validação final: **61 testes passaram**, incluindo os 42 casos do original;
+`cargo fmt --check`, `git diff --check` e `cargo build --release --locked`
+passaram. O build release terminou em 1 min 12 s e gerou
+`target/release/test-craft.exe`.
+`rebuild_check(project="C:/dev/moodtest2", wait_minutes=1)` foi executado
+uma única vez e retornou `not_found: No answer: no build is running for this
+project, or the check took too long.` Não houve aprovação final do verificador
+Craft nesta conferência; nenhuma nova tentativa foi encadeada.
+As seções seguintes preservam o histórico; datas e resultados antigos não
+representam o resultado da conferência mais recente.
 
 ## Conferência atual: escopo XML e datasets vazios (10/11/2026)
 

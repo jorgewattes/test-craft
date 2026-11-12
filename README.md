@@ -1,3 +1,5 @@
+A exportação da prova salva somente **todas_as_provas.pdf** e **gabarito_consolidado.pdf**. O histórico com valores, alternativas e logo fica na pasta de dados interna do aplicativo; registros antigos continuam abrindo. A prévia compartilha a paginação, as margens, as tabelas, as imagens e as posições do gerador PDF. As fontes podem variar ligeiramente na tela. Rascunhos têm botão e borda em amarelo claro.
+
 Em **Criar prova**, cole os alunos na grade: textos com tabulações viram colunas e quebras de linha viram linhas. Marque a coluna dos nomes, remova colunas/linhas extras pelo **×** e marque **Primeira linha é cabeçalho** quando necessário. Só a coluna escolhida entra na prova; a grade completa fica salva nas preferências e listas antigas são migradas automaticamente.
 
 # Test Craft
@@ -6,7 +8,7 @@ Configure categorias pelo botão de ícone ao lado do filtro. A janela permite c
 
 O banco mostra os totais em uma linha compacta. Combine categoria e busca com os filtros **Todas**, **Prontas**, **Com erro** e **Rascunhos**. Questões com validação pendente não aparecem como prontas nem com erro até a conferência terminar; rascunhos com problemas também aparecem em **Com erro**. Em **Criar prova**, o botão **Adicionar categoria ou subcategoria** abre uma janela de busca que aceita palavras sem acentos e mantém o foco durante a digitação.
 
-**Exportar** e **Exportar seleção** permitem salvar JSON completo ou **Moodle XML**. O XML exporta apenas questões prontas e válidas, preservando categorias, imagens PNG/JPEG e gabaritos, com suporte a uma ou várias respostas corretas. Cada questão calculada vira uma questão de múltipla escolha com valores fixos; use JSON para preservar as fórmulas editáveis. Em Moodle, importe pelo banco de questões usando o formato **Moodle XML** e a opção de categorias do arquivo. **Gerar PDFs + Moodle** também salva um XML por aluno, com os mesmos valores e a mesma ordem de alternativas do PDF; o XML importa questões para o banco Moodle, sem criar automaticamente uma atividade de prova.
+**Exportar** e **Exportar seleção** permitem salvar JSON completo ou **Moodle XML**. O XML exporta apenas questões prontas e válidas, preservando categorias, imagens PNG/JPEG e gabaritos, com suporte a uma ou várias respostas corretas. Cada questão calculada vira uma questão de múltipla escolha com valores fixos; use JSON para preservar as fórmulas editáveis. Em Moodle, importe pelo banco de questões usando o formato **Moodle XML** e a opção de categorias do arquivo.
 
 Selecione vários arquivos JSON/XML de uma vez. Na conferência, altere o destino de cada categoria ou ajuste a categoria de uma questão individualmente antes de confirmar. Confira as quantidades, os erros e as categorias antes de confirmar. Questões com erro podem ser incluídas para revisão no editor ou deixadas de fora. Os caminhos das categorias são preservados ao exportar e importar.
 
@@ -14,7 +16,7 @@ Em **Criar prova**, adicione um logo PNG ou JPEG se desejar. O logo é opcional,
 
 No editor, escolha **Rascunho** ou **Pronta**. Somente questões prontas e válidas são contabilizadas e sorteadas nas provas. Em **Questões por categoria**, escolha **Sorteio por aluno** para selecionar questões independentemente para cada aluno ou **Sorteio por prova** para sortear uma seleção comum, com valores calculados por aluno. Os valores são sorteados de forma independente e podem coincidir.
 
-Use **Adicionar categoria ou subcategoria** e a busca para montar a lista da prova; selecionar uma categoria principal adiciona as subcategorias disponíveis em linhas separadas, sem duplicar as já escolhidas. As quantidades de sorteio continuam individuais por linha, somente para questões diretamente nela. Os totais entre parênteses incluem todas as questões da categoria e suas subcategorias; a coluna Disponíveis mostra apenas as prontas e válidas da linha. O botão **×** retira uma categoria da prova. As setas da categoria mudam a ordem dos blocos. Depois de **Conferir prévia**, use as setas de cada questão para adiantar ou postergar sua posição em todas as versões. Essa ordem acompanha os PDFs, os gabaritos e o registro do lote e é reaplicada ao gerar outra prévia com o mesmo plano.
+Use **Adicionar categoria ou subcategoria** e a busca para montar a lista da prova; selecionar uma categoria principal adiciona as subcategorias disponíveis em linhas separadas, sem duplicar as já escolhidas. As quantidades de sorteio continuam individuais por linha, somente para questões diretamente nela. O seletor agrupa as subcategorias em seções recolhíveis; os números mostram as questões prontas disponíveis. A coluna Disponíveis mostra apenas as prontas e válidas diretamente na linha. O botão **×** retira uma categoria da prova. As setas da categoria mudam a ordem dos blocos. **Conferir prévia** abre uma janela popup com páginas na proporção do PDF, zoom e seleção de aluno. Em **Reordenar questões em todas as versões**, use as setas para ajustar as posições. Essa ordem acompanha os PDFs, os gabaritos e o registro do lote e é reaplicada ao gerar outra prévia com o mesmo plano.
 
 A importação Moodle mantém imagens PNG/JPEG do enunciado e das alternativas, incluindo arquivos incorporados em subpastas, nomes codificados em URLs, imagens em base64 no HTML e o formato antigo `image_base64`. As imagens aparecem nas prévias e nos PDFs. Cada referência sem arquivo incorporado gera um aviso para revisão.
 
@@ -24,15 +26,21 @@ Crie questões calculadas, organize seu banco e gere provas e gabaritos individu
 
 ## Instalar
 
-A versão **0.4.4** é distribuída em MSI e ZIP **sem assinatura digital**, mantendo a distribuição da versão anterior. O Windows pode mostrar **Autor desconhecido**. Os arquivos SHA-256 permitem conferir a integridade dos downloads. Veja os detalhes em [SIGNING.md](SIGNING.md).
+A versão **0.4.5** é distribuída em MSI e ZIP **sem assinatura digital**, mantendo a distribuição da versão anterior. O Windows pode mostrar **Autor desconhecido**. Os arquivos SHA-256 permitem conferir a integridade dos downloads. Veja os detalhes em [SIGNING.md](SIGNING.md).
 
-Baixe o [instalador MSI do Test Craft 0.4.4](https://github.com/jorgewattes/test-craft/releases/download/v0.4.4/test-craft-0.4.4-windows-x64.msi), execute o instalador e abra **Test Craft** pelo menu Iniciar. Requer Windows 10/11 de 64 bits e suporte a OpenGL.
+Baixe o [instalador MSI do Test Craft 0.4.5](https://github.com/jorgewattes/test-craft/releases/download/v0.4.5/test-craft-0.4.5-windows-x64.msi), execute o instalador e abra **Test Craft** pelo menu Iniciar. Requer Windows 10/11 de 64 bits e suporte a OpenGL.
 
 A partir da versão 0.4.2, abra **Sobre e atualizações**, verifique a versão e clique em **Baixar e instalar**. O aplicativo baixa e confere o SHA-256, solicita autorização administrativa pelo Windows e fecha para instalar; ao concluir, abra-o novamente. Os dados ficam em **%LOCALAPPDATA%\Test Craft\data** e são preservados na atualização e desinstalação. Feche o aplicativo antes de copiar essa pasta para fazer backup.
 
 A versão portátil em ZIP também está disponível: extraia e abra **test-craft.exe**. Nela, os dados ficam na pasta **data** ao lado do executável. Para migrar do ZIP ao MSI, feche o aplicativo e copie essa pasta para o caminho acima.
 
 ## Usar
+
+As figuras dos enunciados ficam centralizadas na prévia, no PDF e no Moodle XML.
+Use `{={x}*rnd(0.8,1.2)}` para multiplicar por um fator aleatório entre 0,8 e 1,2. Em `rnd(min,max)`, a vírgula separa os dois limites; use ponto nos limites decimais. Mínimo e máximo são inclusivos, podem ser iguais ou negativos e devem estar em ordem. Chamadas com os mesmos limites numéricos reutilizam o fator dentro da mesma questão; cada versão sorteia novamente. O fator aparece nos valores da prévia e fica registrado no lote.
+
+Quando alternativas coincidem, o aviso mostra suas letras, os textos ou fórmulas e os valores exatos do teste. A prévia no banco e no editor usa a combinação que falhou, com as alternativas repetidas destacadas, inclusive na prévia ampliada. Alterar a questão limpa esse exemplo; valide novamente para conferir todos os intervalos. Questões com `rnd` são conferidas em 256 amostras e cada versão gerada é validada antes de salvar.
+
 
 - **Banco de questões:** importe XML Moodle ou JSON, pesquise, edite e exporte seu banco.
 - **Elaborar questão:** escreva enunciado, variáveis e alternativas. Use `{x}` para variáveis e `{={x}*2}` para cálculos.
@@ -66,7 +74,7 @@ Se o login expirar, abra novamente o atalho. Não envie senhas ou tokens pelo ch
 
 No Craft Anything, o perfil **Codex Caderno GitHub** usa o executor do Craft (`build_command_run`) com seu usuário habitual do Windows. Se o terminal isolado informar **CodexSandboxOffline**, o Codex deve repetir a verificação por esse executor antes de solicitar um novo login. Se o executor estiver indisponível, abra o Codex ou o PowerShell com seu usuário habitual do Windows.
 
-O projeto fica em **C:\dev\moodtest2\app**, branch **main**, versão **0.4.4**, no repositório **jorgewattes/test-craft**. A [Release v0.4.4](https://github.com/jorgewattes/test-craft/releases/tag/v0.4.4) foi publicada em 11/11/2026, com MSI, ZIP e seus arquivos SHA-256, após a conclusão do workflow da tag. Confira a conexão antes de novos envios; a publicação só está concluída quando o workflow da tag terminar e a Release com MSI e ZIP estiver disponível no GitHub. A validação ICE do MSI é obrigatória no workflow; pacotes locais gerados com `-SkipMsiValidation` não substituem essa validação.
+O projeto fica em **C:\dev\moodtest2\app**, branch **main**, versão **0.4.5**, no repositório **jorgewattes/test-craft**. A publicação por tag gera MSI, ZIP e SHA-256 no GitHub Actions; só está concluída quando o workflow terminar e os quatro arquivos estiverem disponíveis na Release. A validação ICE do MSI é obrigatória no workflow.
 
 Com Rust e Visual Studio Build Tools instalados:
 
@@ -76,6 +84,6 @@ cargo build --locked
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-release.ps1
 ```
 
-O script gera MSI, ZIP, SHA-256, relatório de assinatura e as notas da versão em **dist/**. A configuração `unsignedReleaseVersion: "0.4.4"` em **release-config.json** autoriza somente essa versão sem certificado, inclusive no GitHub Actions. Outras versões exigem assinatura por padrão; a preparação local sem certificado precisa de `-AllowUnsigned`. Configure a assinatura conforme [SIGNING.md](SIGNING.md). Tags `vX.Y.Z` correspondentes à versão do Cargo.toml publicam os pacotes com as notas da versão atual e validação ICE obrigatória do instalador.
+O script gera MSI, ZIP, SHA-256, relatório de assinatura e as notas da versão em **dist/**. A configuração `unsignedReleaseVersion: "0.4.5"` em **release-config.json** autoriza somente essa versão sem certificado, inclusive no GitHub Actions. Outras versões exigem assinatura por padrão; a preparação local sem certificado precisa de `-AllowUnsigned`. Configure a assinatura conforme [SIGNING.md](SIGNING.md). Tags `vX.Y.Z` correspondentes à versão do Cargo.toml publicam os pacotes com as notas da versão atual e validação ICE obrigatória do instalador.
 
 Licença [MIT](LICENSE). Dependências e créditos em [CREDITS.md](CREDITS.md).

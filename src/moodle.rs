@@ -53,8 +53,13 @@ fn content(text: &str, pictures: &[Picture], prefix: &str) -> Result<String, Str
             _ => return Err("O Moodle XML aceita imagens PNG ou JPEG.".into()),
         };
         let name = format!("{prefix}_{i}.{extension}");
+        let style = if prefix == "question" {
+            " style=\"text-align: center;\""
+        } else {
+            ""
+        };
         html.push_str(&format!(
-            "<p><img src=\"@@PLUGINFILE@@/{name}\" alt=\"{}\" /></p>",
+            "<p{style}><img src=\"@@PLUGINFILE@@/{name}\" alt=\"{}\" /></p>",
             escape(&picture.name)
         ));
         files.push_str(&format!(
@@ -164,6 +169,7 @@ mod tests {
         let expected = preview(&bank.questions[0], 2026).unwrap();
         let (xml, count) = bank_xml(&bank, 2026).unwrap();
         assert_eq!(count, 1);
+        assert_eq!(xml.matches("text-align: center;").count(), 1);
         parse(&xml);
         assert!(xml.contains("<single>true</single>"));
         assert!(xml.contains("<shuffleanswers>0</shuffleanswers>"));
@@ -232,14 +238,16 @@ mod tests {
         )
         .unwrap();
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("checks/moodle-batch");
-        let output = crate::pdf::export(&batch, &dir).unwrap();
+        std::fs::create_dir_all(&dir).unwrap();
+        let output = dir;
         for (i, student) in batch.students.iter().enumerate() {
             let path = output.join(format!(
                 "moodle_{:03}_{}.xml",
                 i + 1,
                 student.name.replace(' ', "_")
             ));
-            let xml = std::fs::read_to_string(&path).unwrap();
+            let xml = instances_xml(&student.questions, &[]).unwrap();
+            std::fs::write(&path, &xml).unwrap();
             parse(&xml);
             let imported = import_xml(&path).unwrap();
             assert_eq!(imported.questions.len(), student.questions.len());

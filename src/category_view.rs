@@ -22,27 +22,87 @@ pub(crate) fn proof_category_picker(
             input.request_focus();
             *focus = false;
         }
-        small(ui, "O total entre parênteses inclui as subcategorias. Selecionar uma categoria principal adiciona suas subcategorias disponíveis.");
-        if validating {small(ui, "Validando questões; as quantidades serão atualizadas.");}
+        small(ui, "Expanda uma categoria para escolher suas subcategorias. O número indica as questões prontas disponíveis.");
+        if validating { small(ui, "Validando questões; as quantidades serão atualizadas."); }
+        ui.add_space(8.);
         egui::ScrollArea::vertical().id_salt("proof_category_results")
-            .max_height((ctx.screen_rect().height() - 260.).clamp(100., 340.))
+            .max_height((ctx.screen_rect().height() - 250.).clamp(100., 440.))
             .show(ui, |ui| {
-                let mut found = false;
-                for cat in &index.categories {
-                    if !bank_view::category_search_matches(cat, search) {continue;}
-                    found = true;
-                    let count = available.get(cat).copied().unwrap_or(0);
-                    let total = index.category_counts.get(cat).copied().unwrap_or(0);
-                    let suffix = if count == 0 && plan.iter().any(|(p,_)|category_matches(p,cat)) {"já adicionada".into()} else {format!("{count} prontas para adicionar")};
-                    if ui.add_enabled(count > 0, egui::Button::new(format!("{} ({total}) · {suffix}", cat.replace('/', " / "))).wrap()).clicked() {
-                        selected = Some(cat.clone());
-                    }
+                if !index.categories.iter().any(|cat| bank_view::category_search_matches(cat, search)) {
+                    small(ui, "Nenhuma categoria encontrada. Ajuste a busca ou crie uma categoria no banco.");
+                } else {
+                    category_tree(ui, "", &index.categories, &available, search, &mut selected);
                 }
-                if !found {small(ui, "Nenhuma categoria encontrada. Ajuste a busca ou crie uma categoria no banco.");}
             });
         close = ui.button("Fechar").clicked();
     });
     (selected, close || response.should_close())
+}
+
+fn category_tree(
+    ui: &mut egui::Ui,
+    parent: &str,
+    categories: &[String],
+    available: &BTreeMap<String, usize>,
+    search: &str,
+    selected: &mut Option<String>,
+) {
+    for cat in categories
+        .iter()
+        .filter(|cat| cat.rsplit_once('/').map_or("", |(p, _)| p) == parent)
+    {
+        if !categories
+            .iter()
+            .any(|p| category_matches(p, cat) && bank_view::category_search_matches(p, search))
+        {
+            continue;
+        }
+        let count = available.get(cat).copied().unwrap_or(0);
+        let leaf = cat.rsplit('/').next().unwrap_or(cat);
+        let children = categories
+            .iter()
+            .any(|p| p.rsplit_once('/').is_some_and(|(p, _)| p == cat));
+        if children {
+            egui::CollapsingHeader::new(R::new(format!("{leaf}   ·   {count}")).strong())
+                .id_salt(("proof_tree", cat, search))
+                .default_open(!search.trim().is_empty())
+                .show(ui, |ui| {
+                    category_add_row(ui, cat, "Todas desta categoria", count, selected);
+                    category_tree(ui, cat, categories, available, search, selected);
+                });
+        } else {
+            category_add_row(ui, cat, leaf, count, selected);
+        }
+    }
+}
+fn category_add_row(
+    ui: &mut egui::Ui,
+    path: &str,
+    label: &str,
+    count: usize,
+    selected: &mut Option<String>,
+) {
+    ui.push_id(path, |ui| {
+        ui.horizontal(|ui| {
+            let response = ui.add_enabled(
+                count > 0,
+                egui::Button::new(label)
+                    .wrap()
+                    .min_size(Vec2::new((ui.available_width() - 75.).max(120.), 36.)),
+            );
+            if response.on_hover_text(path.replace('/', " / ")).clicked() {
+                *selected = Some(path.into());
+            }
+            small(
+                ui,
+                if count == 0 {
+                    "0 disponíveis".into()
+                } else {
+                    format!("{count} prontas")
+                },
+            );
+        });
+    });
 }
 
 #[cfg(test)]

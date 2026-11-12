@@ -1,3 +1,13 @@
+# Test Craft 0.4.5
+
+- Mais espaço e respiro para as questões por categoria na criação de prova.
+- Seletor hierárquico com subcategorias recolhíveis, busca e contagens de questões prontas.
+- Rascunhos com botão e borda em amarelo claro.
+- Exportação simplificada: todas as provas em um PDF e gabarito consolidado em PDF. Histórico preservado internamente, sem arquivos extras na exportação.
+- Prévia em popup com aluno, zoom e reordenação; paginação, tabelas, imagens e posições compartilhadas com o gerador PDF.
+- Correções locais de compatibilidade de cálculos, variáveis Moodle, letras das alternativas e diagnóstico de alternativas repetidas incorporadas à atualização.
+- MSI e ZIP sem assinatura digital e com SHA-256, mantendo o formato de distribuição anterior e validação ICE obrigatória.
+
 # Test Craft 0.4.4
 
 - Questões importadas em subcategorias disponíveis na criação de prova ao selecionar a categoria principal, sem duplicação das já adicionadas.

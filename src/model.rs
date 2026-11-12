@@ -39,6 +39,20 @@ use std::{
 };
 
 pub const DECIMALS: usize = 2;
+pub fn answer_label(mut index: usize) -> String {
+    // MoodTest.py letters_for, L952, source offset 0x7c98:
+    // repeated remainder modulo 26, then quotient minus one (a..z, aa..zz, aaa..).
+    let mut letters = Vec::new();
+    loop {
+        letters.push((b'a' + (index % 26) as u8) as char);
+        let quotient = index / 26;
+        if quotient == 0 {
+            break;
+        }
+        index = quotient - 1;
+    }
+    letters.into_iter().rev().collect()
+}
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 pub struct Variable {
     pub name: String,
@@ -232,6 +246,8 @@ struct Parser<'a> {
     pos: usize,
     vars: &'a BTreeMap<String, f64>,
     depth: usize,
+    rng: &'a mut StdRng,
+    draws: &'a mut BTreeMap<String, f64>,
 }
 impl<'a> Parser<'a> {
     fn peek(&self) -> char {
@@ -388,6 +404,35 @@ impl<'a> Parser<'a> {
             let name: String = self.chars[start..self.pos].iter().collect();
             if self.eat('(') {
                 let x = self.expr()?;
+                if name == "rnd" {
+                    if !self.eat(',') {
+                        return Err("Use rnd(min,max), com dois limites separados por vírgula. Use ponto nos limites decimais.".into());
+                    }
+                    let max = self.expr()?;
+                    if !self.eat(')') {
+                        return Err("Use rnd(min,max), com exatamente dois limites.".into());
+                    }
+                    if !x.is_finite()
+                        || !max.is_finite()
+                        || x > max
+                        || x.abs() > 1e15
+                        || max.abs() > 1e15
+                    {
+                        return Err("Intervalo inválido em rnd(min,max): mínimo ≤ máximo e limites finitos de até 10^15.".into());
+                    }
+                    let key = format!("rnd({x},{max})");
+                    if let Some(value) = self.draws.get(&key) {
+                        return Ok(*value);
+                    }
+                    let unit = (self.rng.next() >> 11) as f64 / ((1u64 << 53) - 1) as f64;
+                    let value = if x == max {
+                        x
+                    } else {
+                        (x * (1. - unit) + max * unit).clamp(x, max)
+                    };
+                    self.draws.insert(key, value);
+                    return Ok(value);
+                }
                 if !self.eat(')') {
                     return Err("Feche os parênteses da função.".into());
                 }
@@ -457,7 +502,21 @@ impl<'a> Parser<'a> {
             .map_err(|_| "Número inteiro fora do limite numérico.".into())
     }
 }
+#[cfg(test)]
 pub fn eval(expr: &str, vars: &BTreeMap<String, f64>) -> Result<f64, String> {
+    eval_with_random(
+        expr,
+        vars,
+        &mut StdRng::seed_from_u64(0),
+        &mut BTreeMap::new(),
+    )
+}
+fn eval_with_random(
+    expr: &str,
+    vars: &BTreeMap<String, f64>,
+    rng: &mut StdRng,
+    draws: &mut BTreeMap<String, f64>,
+) -> Result<f64, String> {
     if expr.len() > 4096 {
         return Err("A fórmula deve ter até 4.096 caracteres.".into());
     }
@@ -473,18 +532,38 @@ pub fn eval(expr: &str, vars: &BTreeMap<String, f64>) -> Result<f64, String> {
         let value = vars
             .get(name)
             .ok_or(format!("Variável {{{name}}} não cadastrada."))?;
-        expanded.push_str(&value.to_string());
+        // MoodTest.py avaliar_expressao_com_variaveis at source 0x1aa2,
+        // str(value) at 0x1bed: dataset values are floats, including integral
+        // values. Preserve their decimal token: {x}_0 for x=3 is 3.0_0,
+        // not 3_0; {x}.5 must remain invalid rather than becoming 3.5.
+        expanded.push_str(&format!("{value:?}"));
         rest = &rest[end + 1..];
     }
     expanded.push_str(rest);
     // MoodTest.py _preprocess_expr, source offset 0x128e (ln rewrite at 0x1370):
     // replace ln( before removing whitespace, so ln (x) is not an alias.
     let normalized = expanded.trim().replace('^', "**").replace("ln(", "log(");
-    let chars: Vec<_> = normalized
-        .chars()
-        .filter(|c| !c.is_whitespace())
-        .map(|c| if c == ',' { '.' } else { c })
-        .collect();
+    let compact: Vec<_> = normalized.chars().filter(|c| !c.is_whitespace()).collect();
+    let mut parentheses = Vec::new();
+    let mut chars = Vec::with_capacity(compact.len());
+    for (i, &c) in compact.iter().enumerate() {
+        if c == '(' {
+            let mut start = i;
+            while start > 0
+                && (compact[start - 1].is_ascii_alphanumeric() || compact[start - 1] == '_')
+            {
+                start -= 1;
+            }
+            parentheses.push(compact[start..i] == ['r', 'n', 'd']);
+        } else if c == ')' {
+            parentheses.pop();
+        }
+        chars.push(if c == ',' && parentheses.last() != Some(&true) {
+            '.'
+        } else {
+            c
+        });
+    }
     // Bound recursive unary and power chains as well as parentheses.
     if chars.len() > 512 {
         return Err("Simplifique a fórmula (até 512 símbolos).".into());
@@ -494,6 +573,8 @@ pub fn eval(expr: &str, vars: &BTreeMap<String, f64>) -> Result<f64, String> {
         pos: 0,
         vars,
         depth: 0,
+        rng,
+        draws,
     };
     let n = p.expr()?;
     if p.pos != p.chars.len() {
@@ -530,7 +611,21 @@ fn remove_zero_decimals(text: &str) -> String {
     out
 }
 
+#[cfg(test)]
 pub fn render(text: &str, vars: &BTreeMap<String, f64>) -> Result<String, String> {
+    render_with_random(
+        text,
+        vars,
+        &mut StdRng::seed_from_u64(0),
+        &mut BTreeMap::new(),
+    )
+}
+fn render_with_random(
+    text: &str,
+    vars: &BTreeMap<String, f64>,
+    rng: &mut StdRng,
+    draws: &mut BTreeMap<String, f64>,
+) -> Result<String, String> {
     // Question._processar_texto (MoodTest.py:1075), before calculation/substitution.
     let normalized = text
         .replace(r"\(", "")
@@ -560,7 +655,7 @@ pub fn render(text: &str, vars: &BTreeMap<String, f64>) -> Result<String, String
         let j = end.ok_or("Feche os campos com }.")?;
         let inner = &rest[..j];
         if let Some(e) = inner.strip_prefix('=') {
-            out.push_str(&fmt(eval(e, vars)?))
+            out.push_str(&fmt(eval_with_random(e, vars, rng, draws)?))
         } else {
             out.push_str(&fmt(*vars
                 .get(inner)
@@ -579,43 +674,132 @@ fn picture_hash(pictures: &[Picture]) -> u64 {
     }
     h.finish()
 }
+#[derive(Clone, Debug)]
+pub struct ValidationExample {
+    pub values: BTreeMap<String, f64>,
+    seed: u64,
+}
+pub fn example_preview(q: &Question, example: &ValidationExample) -> Result<Instance, String> {
+    render_instance(
+        q,
+        example.values.clone(),
+        &mut StdRng::seed_from_u64(example.seed),
+    )
+}
+fn render_instance(
+    q: &Question,
+    values: BTreeMap<String, f64>,
+    rng: &mut StdRng,
+) -> Result<Instance, String> {
+    render_instance_inner(q, values, rng, true)
+}
+fn render_instance_inner(
+    q: &Question,
+    mut values: BTreeMap<String, f64>,
+    rng: &mut StdRng,
+    include_pictures: bool,
+) -> Result<Instance, String> {
+    let mut draws = BTreeMap::new();
+    let text = render_with_random(&q.text, &values, rng, &mut draws)
+        .map_err(|e| format!("Enunciado: {e}"))?;
+    let answers = q
+        .answers
+        .iter()
+        .enumerate()
+        .map(|(i, a)| {
+            Ok(Answer {
+                text: render_with_random(&a.text, &values, rng, &mut draws)
+                    .map_err(|e| format!("Alternativa {}: {e}", answer_label(i)))?,
+                correct: a.correct,
+                pictures: if include_pictures {
+                    a.pictures.clone()
+                } else {
+                    vec![]
+                },
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    values.extend(draws);
+    Ok(Instance {
+        title: q.title.clone(),
+        category: q.category.clone(),
+        text,
+        values,
+        pictures: if include_pictures {
+            q.pictures.clone()
+        } else {
+            vec![]
+        },
+        answers,
+    })
+}
+pub fn duplicate_pairs(p: &Instance) -> Vec<(usize, usize)> {
+    let signatures: Vec<_> = p
+        .answers
+        .iter()
+        .map(|a| picture_hash(&a.pictures))
+        .collect();
+    duplicate_pairs_with_signatures(p, &signatures)
+}
+fn duplicate_pairs_with_signatures(p: &Instance, signatures: &[u64]) -> Vec<(usize, usize)> {
+    let mut seen = BTreeMap::new();
+    let mut pairs = Vec::new();
+    for (i, a) in p.answers.iter().enumerate() {
+        let key = (a.text.trim().to_lowercase(), signatures[i]);
+        if let Some(&first) = seen.get(&key) {
+            pairs.push((first, i));
+        } else {
+            seen.insert(key, i);
+        }
+    }
+    pairs
+}
+fn duplicate_error(q: &Question, p: &Instance, pairs: &[(usize, usize)]) -> Option<String> {
+    if pairs.is_empty() {
+        return None;
+    }
+    let details = pairs
+        .iter()
+        .map(|&(a, b)| {
+            format!(
+                "Alternativas {} e {} produzem o mesmo resultado: «{}».\n{}: {}\n{}: {}",
+                answer_label(a),
+                answer_label(b),
+                if p.answers[b].text.is_empty() {
+                    "(somente imagens)"
+                } else {
+                    &p.answers[b].text
+                },
+                answer_label(a),
+                q.answers[a].text,
+                answer_label(b),
+                q.answers[b].text
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    Some(format!("{details}\nValores do teste: {}\nA comparação ignora maiúsculas e espaços nas pontas, considera as imagens e usa os resultados com até duas casas decimais. Ajuste as fórmulas ou os intervalos.",
+        if p.values.is_empty() { "sem variáveis".into() } else { p.values.iter().map(|(k,v)|format!("{k}={v}")).collect::<Vec<_>>().join(", ") }))
+}
 pub fn instance(
     q: &Question,
     values: BTreeMap<String, f64>,
     rng: &mut StdRng,
     shuffle: bool,
 ) -> Result<Instance, String> {
-    let mut answers: Vec<_> = q
-        .answers
-        .iter()
-        .map(|a| {
-            Ok(Answer {
-                text: render(&a.text, &values)?,
-                correct: a.correct,
-                pictures: a.pictures.clone(),
-            })
-        })
-        .collect::<Result<_, String>>()?;
-    let mut unique = BTreeSet::new();
-    for a in &answers {
-        if !unique.insert((a.text.trim().to_lowercase(), picture_hash(&a.pictures))) {
-            return Err(
-                "Duas alternativas produzem o mesmo texto. Ajuste as fórmulas ou os intervalos."
-                    .into(),
-            );
-        }
+    let mut p = render_instance(q, values, rng)?;
+    if let Some(e) = duplicate_error(q, &p, &duplicate_pairs(&p)) {
+        return Err(e);
     }
     if shuffle {
-        answers.shuffle(rng)
+        p.answers.shuffle(rng);
     }
-    Ok(Instance {
-        title: q.title.clone(),
-        category: q.category.clone(),
-        text: render(&q.text, &values)?,
-        values,
-        pictures: q.pictures.clone(),
-        answers,
-    })
+    Ok(p)
+}
+pub fn review_preview(q: &Question, seed: u64) -> Result<Instance, String> {
+    let mut rng = StdRng::seed_from_u64(seed);
+    let values = sample(q, &mut rng);
+    render_instance(q, values, &mut rng)
 }
 pub fn sample(q: &Question, rng: &mut StdRng) -> BTreeMap<String, f64> {
     q.variables
@@ -629,6 +813,14 @@ pub fn preview(q: &Question, seed: u64) -> Result<Instance, String> {
     instance(q, values, &mut rng, false)
 }
 pub fn validate(q: &Question) -> Result<String, String> {
+    validate_with_example(q).0
+}
+pub fn validate_with_example(q: &Question) -> (Result<String, String>, Option<ValidationExample>) {
+    let mut example = None;
+    let result = validate_inner(q, &mut example);
+    (result, example)
+}
+fn validate_inner(q: &Question, example: &mut Option<ValidationExample>) -> Result<String, String> {
     if !q.import_issues.is_empty() {
         return Err(q.import_issues.join("\n"));
     }
@@ -701,7 +893,15 @@ pub fn validate(q: &Question) -> Result<String, String> {
         }
         count = count.saturating_mul(v.count());
     }
-    let exhaustive = count <= 10000;
+    let has_random = std::iter::once(&q.text)
+        .chain(q.answers.iter().map(|a| &a.text))
+        .any(|text| {
+            text.chars()
+                .filter(|c| !c.is_whitespace())
+                .collect::<String>()
+                .contains("rnd(")
+        });
+    let exhaustive = count <= 10000 && !has_random;
     let tests = if exhaustive { count } else { 256 };
     let mut rng = StdRng::seed_from_u64(42);
     let signatures: Vec<_> = q
@@ -728,32 +928,31 @@ pub fn validate(q: &Question) -> Result<String, String> {
         } else {
             sample(q, &mut rng)
         };
-        let check = (|| -> Result<(), String> {
-            render(&q.text, &values)?;
-            let mut unique = BTreeSet::new();
-            for (j, a) in q.answers.iter().enumerate() {
-                let s = render(&a.text, &values)?;
-                if !unique.insert((s.trim().to_lowercase(), signatures[j])) {
-                    return Err("Duas alternativas produzem o mesmo texto. Ajuste as fórmulas ou os intervalos.".into());
-                }
-            }
-            Ok(())
-        })();
-        check.map_err(|e| {
+        let replay = ValidationExample {
+            values: values.clone(),
+            seed: rng.0,
+        };
+        let p = render_instance_inner(q, values.clone(), &mut rng, false).map_err(|e| {
             format!(
                 "{e}\nValores do teste: {}",
                 values
                     .iter()
-                    .map(|(k, v)| format!("{k}={}", fmt(*v)))
+                    .map(|(k, v)| format!("{k}={v}"))
                     .collect::<Vec<_>>()
                     .join(", ")
             )
         })?;
+        if let Some(error) =
+            duplicate_error(q, &p, &duplicate_pairs_with_signatures(&p, &signatures))
+        {
+            *example = Some(replay);
+            return Err(error);
+        }
     }
     Ok(if exhaustive {
         format!("Validada em {tests} combinações. Sem erros nas fórmulas.")
     } else {
-        "Pré-validada em 256 amostras; o intervalo completo é maior. Cada prova será validada antes de salvar.".into()
+        "Pré-validada em 256 amostras; sorteios e intervalos extensos não permitem testar todos os valores. Cada prova será validada antes de salvar.".into()
     })
 }
 pub fn categories(bank: &Bank) -> Vec<String> {
@@ -1694,6 +1893,149 @@ pub fn import_xml(path: &Path) -> Result<Bank, String> {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn random_multiplier_is_bounded_shared_and_reproducible() {
+        let mut q = examples().questions.remove(0);
+        q.variables.clear();
+        q.text = "Fator {=rnd(-0.5,1.5)}, produto {=10*rnd(-0.5,1.5)}".into();
+        q.answers = vec![
+            Answer {
+                text: "{=10*rnd(-0.5,1.5)}".into(),
+                correct: true,
+                pictures: vec![],
+            },
+            Answer {
+                text: "{=10*rnd(-0.5,1.5)+100}".into(),
+                correct: false,
+                pictures: vec![],
+            },
+        ];
+        let mut factors = BTreeSet::new();
+        for seed in 0..64 {
+            let p = preview(&q, seed).unwrap();
+            assert_eq!(p, preview(&q, seed).unwrap());
+            let factor = p.values["rnd(-0.5,1.5)"];
+            assert!((-0.5..=1.5).contains(&factor));
+            assert!(p.text.ends_with(&format!("produto {}", p.answers[0].text)));
+            assert_eq!(p.answers[0].text, fmt(10. * factor));
+            factors.insert(factor.to_bits());
+        }
+        assert!(factors.len() > 50);
+        assert!(validate(&q).unwrap().contains("256 amostras"));
+        assert_eq!(eval("3*rnd(2,2)", &BTreeMap::new()).unwrap(), 6.);
+        assert_eq!(eval("1,5*rnd(sqrt(4),2)", &BTreeMap::new()).unwrap(), 3.);
+        assert_eq!(eval("rnd(rnd(2,2),sqrt(4))", &BTreeMap::new()).unwrap(), 2.);
+        assert_eq!(
+            eval("rnd({x},{x}+1)", &BTreeMap::from([("x".into(), 2.)]))
+                .unwrap()
+                .floor(),
+            2.
+        );
+        for e in [
+            "rnd(2,1)",
+            "rnd(1)",
+            "rnd()",
+            "rnd(1,2,3)",
+            "rnd(1,2",
+            "rnd(sqrt(-1),2)",
+            "rnd(1e999,2)",
+        ] {
+            assert!(eval(e, &BTreeMap::new()).is_err(), "{e}");
+        }
+    }
+    #[test]
+    fn duplicate_diagnostic_replays_exact_values_and_random_factors() {
+        let mut q = examples().questions.remove(0);
+        q.variables = vec![Variable {
+            name: "x".into(),
+            min: 1.,
+            max: 2.,
+            decimals: 0,
+            values: vec![],
+        }];
+        q.text = "x={x}, fator={=rnd(0.8,1.2)}".into();
+        q.answers = vec![
+            Answer {
+                text: "{={x}*rnd(0.8,1.2)}".into(),
+                correct: true,
+                pictures: vec![],
+            },
+            Answer {
+                text: "{={x}*rnd(0.8,1.2)+0.000001}".into(),
+                correct: false,
+                pictures: vec![],
+            },
+            Answer {
+                text: "Outro valor".into(),
+                correct: false,
+                pictures: vec![],
+            },
+        ];
+        let (result, example) = validate_with_example(&q);
+        let error = result.unwrap_err();
+        let example = example.unwrap();
+        let p = example_preview(&q, &example).unwrap();
+        assert_eq!(p, example_preview(&q, &example).unwrap());
+        assert_eq!(duplicate_pairs(&p), vec![(0, 1)]);
+        assert!(error.contains("Alternativas a e b"));
+        assert!(error.contains(&q.answers[1].text));
+        assert!(error.contains(&p.answers[0].text));
+        assert!(error.contains("x=1"));
+        assert!(error.contains(&format!("rnd(0.8,1.2)={}", p.values["rnd(0.8,1.2)"])));
+        assert!(instance(
+            &q,
+            example.values.clone(),
+            &mut StdRng::seed_from_u64(example.seed),
+            false
+        )
+        .is_err());
+        q.answers[1].text = "{={x}*rnd(0.8,1.2)+100}".into();
+        let (result, example) = validate_with_example(&q);
+        assert!(result.is_ok());
+        assert!(example.is_none());
+        // A collision in a later combination must replace the normal random preview.
+        q.text = "x={x}".into();
+        q.answers[0].text = "{={x}}".into();
+        q.answers[1].text = "2".into();
+        let (result, example) = validate_with_example(&q);
+        assert!(result.unwrap_err().contains("x=2"));
+        let p = example_preview(&q, &example.unwrap()).unwrap();
+        assert_eq!(p.text, "x=2");
+        assert_eq!(p.answers[0].text, p.answers[1].text);
+    }
+
+    #[test]
+    fn placeholder_spelling_matches_original() {
+        let mechanics: serde_json::Value =
+            serde_json::from_str(include_str!("../mechanics.json")).unwrap();
+        for case in mechanics["original"]["placeholder_spelling_cases"]
+            .as_array()
+            .unwrap()
+        {
+            let expression = case["expression"].as_str().unwrap();
+            let vars: BTreeMap<String, f64> =
+                serde_json::from_value(case["variables"].clone()).unwrap();
+            let result = eval(expression, &vars);
+            if let Some(expected) = case["value"].as_f64().filter(|v| v.abs() <= 1e15) {
+                let actual = result.unwrap_or_else(|e| panic!("{case}: {e}"));
+                assert!(
+                    (actual - expected).abs() <= expected.abs() * 1e-12 + 1e-100,
+                    "{case}: {actual}"
+                );
+                assert_eq!(
+                    render(&format!("{{={expression}}}"), &vars).unwrap(),
+                    fmt(expected),
+                    "{case}"
+                );
+            } else {
+                assert!(result.is_err(), "{case}: {result:?}");
+                assert!(
+                    render(&format!("{{={expression}}}"), &vars).is_err(),
+                    "{case}"
+                );
+            }
+        }
+    }
+    #[test]
     fn expression_normalization_matches_original() {
         let mechanics: serde_json::Value =
             serde_json::from_str(include_str!("../mechanics.json")).unwrap();
@@ -2306,6 +2648,23 @@ mod tests {
         let vars = BTreeMap::from([("x_1".into(), 4.)]);
         assert_eq!(eval("x_1+1_000", &vars).unwrap(), 1004.);
     }
+    #[test]
+    fn answer_labels_match_original_beyond_z() {
+        let mechanics: serde_json::Value =
+            serde_json::from_str(include_str!("../mechanics.json")).unwrap();
+        for case in mechanics["original"]["answer_label_cases"]
+            .as_array()
+            .unwrap()
+        {
+            let index = case["index"].as_u64().unwrap() as usize;
+            assert_eq!(
+                answer_label(index),
+                case["expected"].as_str().unwrap(),
+                "index {index}"
+            );
+        }
+    }
+
     #[test]
     fn formatting_and_blocks() {
         assert_eq!(fmt(1234.5), "1.234,50");

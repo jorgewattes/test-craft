@@ -1,4 +1,7 @@
-use crate::model::{categories, category_matches, validate, Bank, Question, QuestionStatus};
+use crate::model::{
+    categories, category_matches, validate_with_example, Bank, Question, QuestionStatus,
+    ValidationExample,
+};
 use std::{
     collections::BTreeMap,
     sync::{
@@ -175,6 +178,7 @@ pub struct ValidationResult {
     pub generation: u64,
     pub id: u64,
     pub error: Option<String>,
+    pub example: Option<ValidationExample>,
 }
 pub struct Validator {
     requests: mpsc::Sender<(u64, Vec<Question>)>,
@@ -188,7 +192,8 @@ impl Validator {
         let generation = Arc::new(AtomicU64::new(0));
         let current = generation.clone();
         std::thread::spawn(move || {
-            let mut cache: BTreeMap<u64, (Question, Option<String>)> = BTreeMap::new();
+            let mut cache: BTreeMap<u64, (Question, Option<String>, Option<ValidationExample>)> =
+                BTreeMap::new();
             while let Ok(mut request) = input.recv() {
                 // Discard superseded batches; keep a single serial validator.
                 while let Ok(newer) = input.try_recv() {
@@ -201,17 +206,23 @@ impl Validator {
                     if current.load(Ordering::Relaxed) != generation {
                         break;
                     }
-                    let error = match cache.get(&q.id) {
-                        Some((old, error)) if old == &q => error.clone(),
-                        _ => validate(&q).err(),
+                    let (error, example) = match cache.get(&q.id) {
+                        Some((old, error, example)) if old == &q => {
+                            (error.clone(), example.clone())
+                        }
+                        _ => {
+                            let (result, example) = validate_with_example(&q);
+                            (result.err(), example)
+                        }
                     };
                     let id = q.id;
-                    cache.insert(id, (q, error.clone()));
+                    cache.insert(id, (q, error.clone(), example.clone()));
                     if output
                         .send(ValidationResult {
                             generation,
                             id,
                             error,
+                            example,
                         })
                         .is_err()
                     {
@@ -374,17 +385,25 @@ mod tests {
         let worker = Validator::new(eframe::egui::Context::default());
         let mut bank = crate::model::examples();
         bank.questions.truncate(1);
-        bank.questions[0].title.clear();
+        let original_answer = bank.questions[0].answers[1].text.clone();
+        bank.questions[0].answers[1].text = bank.questions[0].answers[0].text.clone();
         let first = worker.submit(&bank);
         let result = worker
             .results
             .recv_timeout(std::time::Duration::from_secs(10))
             .unwrap();
         assert_eq!(result.generation, first);
-        assert!(result.error.is_some());
+        assert!(result
+            .error
+            .as_ref()
+            .unwrap()
+            .contains("Alternativas a e b"));
+        let p =
+            crate::model::example_preview(&bank.questions[0], &result.example.unwrap()).unwrap();
+        assert_eq!(p.answers[0].text, p.answers[1].text);
         // Exercise a superseded request, then a correction using the same id.
         worker.submit(&bank);
-        bank.questions[0].title = "Corrigida".into();
+        bank.questions[0].answers[1].text = original_answer;
         let latest = worker.submit(&bank);
         loop {
             let result = worker
@@ -393,6 +412,7 @@ mod tests {
                 .unwrap();
             if result.generation == latest {
                 assert!(result.error.is_none());
+                assert!(result.example.is_none());
                 break;
             }
         }

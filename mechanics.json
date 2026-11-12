@@ -2,17 +2,28 @@
   "version": 1,
   "values": [
     {
+      "name": "answer label sequence",
+      "value": "a through z, then aa through zz, then aaa; correct labels joined with /, empty key is -",
+      "source": "Python letters_for L952 source offset 0x7c98, indices_para_letras L1518 source offset 0xd0f7; 703 isolated original labels, original.answer_label_cases"
+    },
+    {
+      "name": "placeholder floating point spelling",
+      "group": "calculation",
+      "value": "Substitute shortest float text retaining .0 on integral datasets before parsing; never silently concatenate integer tokens",
+      "source": "Python avaliar_expressao_com_variaveis at source offset 0x1aa2; str(value) at 0x1bed; original.placeholder_spelling_cases"
+    },
+    {
       "name": "dataset XML scope and empty definition guard",
       "group": "import",
       "value": "Read direct dataset_definitions/dataset_definition/dataset_items/dataset_item/value only; ignore empty definitions without overwriting earlier values; valid replacements retain duplicate weights and insertion order",
       "source": "Python carregar_questoes source offset 0xc549; items path 0xcbee; if valores guard 0xcf9b; assignment 0xcfc0; original.dataset_scope_cases"
     },
-{
-  "name": "expression normalization order",
-  "group": "calculation",
-  "value": "trim; ^ to **; ln( to log(; remove whitespace; parse",
-  "source": "Python _preprocess_expr L160, source offset 0x128e; avaliar_expressao L173, source offset 0x13bd"
-},
+    {
+      "name": "expression normalization order",
+      "group": "calculation",
+      "value": "trim; ^ to **; ln( to log(; remove whitespace; parse",
+      "source": "Python _preprocess_expr L160, source offset 0x128e; avaliar_expressao L173, source offset 0x13bd"
+    },
     {
       "name": "import category hierarchy",
       "group": "categories",
@@ -183,6 +194,24 @@
       "group": "storage",
       "value": "Incremental category operations; bounded WAL autocheckpoint=256, journal limit=8MiB; PRAGMA optimize at open/close; cached eligible counts",
       "source": "User product requirement 2026-11-10 for 0.4.2; src/storage.rs; src/bank_view.rs"
+    },
+    {
+      "name": "statement picture alignment",
+      "group": "pdf",
+      "value": "Center statement figures in question previews, A4 PDF and Moodle XML; preserve aspect ratio and size limits",
+      "source": "User product requirement 2026-11-12; src/main.rs show_instance; src/pdf.rs picture; src/moodle.rs content"
+    },
+    {
+      "name": "random calculation multiplier",
+      "group": "calculation",
+      "value": "rnd(min,max): inclusive decimal bounds, seeded repeatable draw, same numerical bounds share a factor within an instance; persist factors in Instance.values; 256 validation samples",
+      "source": "User product requirement 2026-11-12; src/model.rs Parser and render_instance"
+    },
+    {
+      "name": "duplicate answer error example",
+      "group": "validation",
+      "value": "Report alternative labels, rendered collision, source formulas and exact values; replay the failing variables and random state in bank, editor and expanded preview; highlight colliding alternatives",
+      "source": "User product requirement 2026-11-12; src/model.rs validate_with_example; src/bank_view.rs Validator; src/main.rs show_question_preview"
     }
   ],
   "analysis": {
@@ -193,7 +222,19 @@
     "attempt_log": "checks/deep-numeric-review.json",
     "fallback": "direct source review with AST call references and byte offsets",
     "native_strings_queries_awaited": 3,
-    "native_reference_queries_awaited": 5
+    "native_reference_queries_awaited": 5,
+    "current_review": {
+      "checked_on": "2026-11-12",
+      "mode": "deep",
+      "original_opened_with": "core_target_open",
+      "native_result": "not_supported: text file is not native machine code",
+      "native_addresses_available": false,
+      "attempt_log": "checks/deep-review-2026-11-12.json",
+      "fallback": "Direct original source reading, source byte offsets and isolated AST functions",
+      "oracle": "checks/deep-answer-label-oracle.json",
+      "labels_compared": 703,
+      "key_cases": 7
+    }
   },
   "original": {
     "dataset_scope_cases": [
@@ -338,119 +379,119 @@
     ],
     "normalization_cases_provenance": "Derived by reading original _preprocess_expr and _eval_ast; original code was not executed in this review.",
     "normalization_cases": [
-  {
-    "expression": "ln(1)",
-    "variables": {
-      "ln": 7
-    },
-    "result": 0
-  },
-  {
-    "expression": "ln (1)",
-    "variables": {
-      "ln": 7
-    },
-    "error": "ValueError"
-  },
-  {
-    "expression": "l n(1)",
-    "variables": {
-      "ln": 7
-    },
-    "error": "ValueError"
-  },
-  {
-    "expression": "ln( e )",
-    "variables": {
-      "ln": 7
-    },
-    "result": 1
-  },
-  {
-    "expression": "log (1)",
-    "variables": {
-      "ln": 7
-    },
-    "result": 0
-  },
-  {
-    "expression": "l o g(1)",
-    "variables": {
-      "ln": 7
-    },
-    "result": 0
-  },
-  {
-    "expression": "sqrt (4)",
-    "variables": {
-      "ln": 7
-    },
-    "result": 2
-  },
-  {
-    "expression": "s q r t (4)",
-    "variables": {
-      "ln": 7
-    },
-    "result": 2
-  },
-  {
-    "expression": "ln(1)+2",
-    "variables": {
-      "ln": 7
-    },
-    "result": 2
-  },
-  {
-    "expression": "ln (1)+2",
-    "variables": {
-      "ln": 7
-    },
-    "error": "ValueError"
-  },
-  {
-    "expression": "ln+1",
-    "variables": {
-      "ln": 7
-    },
-    "result": 8
-  },
-  {
-    "expression": "l n+1",
-    "variables": {
-      "ln": 7
-    },
-    "result": 8
-  },
-  {
-    "expression": "LN(1)",
-    "variables": {
-      "ln": 7
-    },
-    "error": "ValueError"
-  },
-  {
-    "expression": "log10 (100)",
-    "variables": {
-      "ln": 7
-    },
-    "result": 2
-  },
-  {
-    "expression": "2 ^ 3 ^ 2",
-    "variables": {
-      "ln": 7
-    },
-    "result": 512
-  },
-  {
-    "expression": "- 2 ^ 2",
-    "variables": {
-      "ln": 7
-    },
-    "result": -4
-  }
-],
+      {
+        "expression": "ln(1)",
+        "variables": {
+          "ln": 7
+        },
+        "result": 0
+      },
+      {
+        "expression": "ln (1)",
+        "variables": {
+          "ln": 7
+        },
+        "error": "ValueError"
+      },
+      {
+        "expression": "l n(1)",
+        "variables": {
+          "ln": 7
+        },
+        "error": "ValueError"
+      },
+      {
+        "expression": "ln( e )",
+        "variables": {
+          "ln": 7
+        },
+        "result": 1
+      },
+      {
+        "expression": "log (1)",
+        "variables": {
+          "ln": 7
+        },
+        "result": 0
+      },
+      {
+        "expression": "l o g(1)",
+        "variables": {
+          "ln": 7
+        },
+        "result": 0
+      },
+      {
+        "expression": "sqrt (4)",
+        "variables": {
+          "ln": 7
+        },
+        "result": 2
+      },
+      {
+        "expression": "s q r t (4)",
+        "variables": {
+          "ln": 7
+        },
+        "result": 2
+      },
+      {
+        "expression": "ln(1)+2",
+        "variables": {
+          "ln": 7
+        },
+        "result": 2
+      },
+      {
+        "expression": "ln (1)+2",
+        "variables": {
+          "ln": 7
+        },
+        "error": "ValueError"
+      },
+      {
+        "expression": "ln+1",
+        "variables": {
+          "ln": 7
+        },
+        "result": 8
+      },
+      {
+        "expression": "l n+1",
+        "variables": {
+          "ln": 7
+        },
+        "result": 8
+      },
+      {
+        "expression": "LN(1)",
+        "variables": {
+          "ln": 7
+        },
+        "error": "ValueError"
+      },
+      {
+        "expression": "log10 (100)",
+        "variables": {
+          "ln": 7
+        },
+        "result": 2
+      },
+      {
+        "expression": "2 ^ 3 ^ 2",
+        "variables": {
+          "ln": 7
+        },
+        "result": 512
+      },
+      {
+        "expression": "- 2 ^ 2",
+        "variables": {
+          "ln": 7
+        },
+        "result": -4
+      }
+    ],
     "path": "C:\\dev\\MoodTest\\MoodTest.py",
     "sha256": "c2b9ff9719e5ca4b7c837a22da5eae6a3bd2811d9eb17ef6895a730c038f1541",
     "kind": "Python source",
@@ -1923,7 +1964,7 @@
       {
         "text": "Valor {= {a}^2/2} N",
         "variables": {
-          "a": 4.0
+          "a": 4
         },
         "expected": "Valor 8 N"
       },
@@ -1942,7 +1983,7 @@
       {
         "text": "{={x}^2} / {=({x})^2} / {=x^2}",
         "variables": {
-          "x": -2.0
+          "x": -2
         },
         "expected": "-4 / 4 / 4"
       },
@@ -1966,7 +2007,7 @@
         "variables": {
           "a": 1.005,
           "b": -1.005,
-          "c": 10.0
+          "c": 10
         },
         "expected": "1,01 / -1,01 / 10"
       },
@@ -1988,9 +2029,9 @@
       {
         "text": "{=pi+e+sin} / {pi} / {=sin(pi/2)}",
         "variables": {
-          "pi": 4.0,
-          "e": 2.0,
-          "sin": 5.0
+          "pi": 4,
+          "e": 2,
+          "sin": 5
         },
         "expected": "11 / 4 / 0,91"
       },
@@ -2002,7 +2043,7 @@
       {
         "text": "{sqrt} / {=sqrt} / {=sqrt(9)}",
         "variables": {
-          "sqrt": 7.0
+          "sqrt": 7
         },
         "expected": "7 / 7 / 3"
       }
@@ -2066,6 +2107,30 @@
           7
         ],
         "expected": "b/d/h"
+      },
+      {
+        "indices": [
+          25,
+          26,
+          27
+        ],
+        "expected": "z/aa/ab"
+      },
+      {
+        "indices": [
+          51,
+          52
+        ],
+        "expected": "az/ba"
+      },
+      {
+        "indices": [
+          675,
+          676,
+          701,
+          702
+        ],
+        "expected": "yz/za/zz/aaa"
       }
     ],
     "question_category_cases": [
@@ -2097,11 +2162,11 @@
       },
       {
         "expression": "sqrt(0)^0",
-        "value": 1.0
+        "value": 1
       },
       {
         "expression": "exp(0)^0",
-        "value": 1.0
+        "value": 1
       },
       {
         "expression": "(-2)^2",
@@ -2109,7 +2174,7 @@
       },
       {
         "expression": "(1e15*10)/10",
-        "value": 1000000000000000.0
+        "value": 1000000000000000
       }
     ],
     "blank_answer_table_cases": [
@@ -2651,7 +2716,7 @@
       },
       {
         "expression": "1e1_0/1e8",
-        "value": 100.0
+        "value": 100
       },
       {
         "expression": "0_0",
@@ -2667,7 +2732,7 @@
       },
       {
         "expression": "01e2",
-        "value": 100.0
+        "value": 100
       },
       {
         "expression": ".5_0",
@@ -2725,7 +2790,7 @@
       },
       {
         "expression": "0XfF/3",
-        "result": 85.0
+        "result": 85
       },
       {
         "expression": "0b1010+0o17",
@@ -2761,7 +2826,7 @@
       },
       {
         "expression": "sqrt(0x100)",
-        "result": 16.0
+        "result": 16
       },
       {
         "expression": "0x1e+2",
@@ -2815,6 +2880,3177 @@
         "expression": "0x1.2",
         "error": "SyntaxError"
       }
-    ]
+    ],
+    "placeholder_spelling_cases": [
+      {
+        "expression": "{x}_0",
+        "variables": {
+          "x": 3.0,
+          "y": 2.0
+        },
+        "value": 3.0
+      },
+      {
+        "expression": "{x}.5",
+        "variables": {
+          "x": 3.0,
+          "y": 2.0
+        },
+        "error": "SyntaxError"
+      },
+      {
+        "expression": "2{x}",
+        "variables": {
+          "x": 3.0,
+          "y": 2.0
+        },
+        "value": 23.0
+      },
+      {
+        "expression": "{x}^2",
+        "variables": {
+          "x": 3.0,
+          "y": 2.0
+        },
+        "value": 9.0
+      },
+      {
+        "expression": "({x})^2",
+        "variables": {
+          "x": 3.0,
+          "y": 2.0
+        },
+        "value": 9.0
+      },
+      {
+        "expression": "{x}{y}",
+        "variables": {
+          "x": 3.0,
+          "y": 2.0
+        },
+        "error": "SyntaxError"
+      },
+      {
+        "expression": "{x}_0",
+        "variables": {
+          "x": -2.0,
+          "y": 2.0
+        },
+        "value": -2.0
+      },
+      {
+        "expression": "{x}.5",
+        "variables": {
+          "x": -2.0,
+          "y": 2.0
+        },
+        "error": "SyntaxError"
+      },
+      {
+        "expression": "2{x}",
+        "variables": {
+          "x": -2.0,
+          "y": 2.0
+        },
+        "value": 0.0
+      },
+      {
+        "expression": "{x}^2",
+        "variables": {
+          "x": -2.0,
+          "y": 2.0
+        },
+        "value": -4.0
+      },
+      {
+        "expression": "({x})^2",
+        "variables": {
+          "x": -2.0,
+          "y": 2.0
+        },
+        "value": 4.0
+      },
+      {
+        "expression": "{x}{y}",
+        "variables": {
+          "x": -2.0,
+          "y": 2.0
+        },
+        "error": "SyntaxError"
+      },
+      {
+        "expression": "{x}_0",
+        "variables": {
+          "x": 0.0,
+          "y": 2.0
+        },
+        "value": 0.0
+      },
+      {
+        "expression": "{x}.5",
+        "variables": {
+          "x": 0.0,
+          "y": 2.0
+        },
+        "error": "SyntaxError"
+      },
+      {
+        "expression": "2{x}",
+        "variables": {
+          "x": 0.0,
+          "y": 2.0
+        },
+        "value": 20.0
+      },
+      {
+        "expression": "{x}^2",
+        "variables": {
+          "x": 0.0,
+          "y": 2.0
+        },
+        "value": 0.0
+      },
+      {
+        "expression": "({x})^2",
+        "variables": {
+          "x": 0.0,
+          "y": 2.0
+        },
+        "value": 0.0
+      },
+      {
+        "expression": "{x}{y}",
+        "variables": {
+          "x": 0.0,
+          "y": 2.0
+        },
+        "error": "SyntaxError"
+      },
+      {
+        "expression": "{x}_0",
+        "variables": {
+          "x": -0.0,
+          "y": 2.0
+        },
+        "value": -0.0
+      },
+      {
+        "expression": "{x}.5",
+        "variables": {
+          "x": -0.0,
+          "y": 2.0
+        },
+        "error": "SyntaxError"
+      },
+      {
+        "expression": "2{x}",
+        "variables": {
+          "x": -0.0,
+          "y": 2.0
+        },
+        "value": 2.0
+      },
+      {
+        "expression": "{x}^2",
+        "variables": {
+          "x": -0.0,
+          "y": 2.0
+        },
+        "value": -0.0
+      },
+      {
+        "expression": "({x})^2",
+        "variables": {
+          "x": -0.0,
+          "y": 2.0
+        },
+        "value": 0.0
+      },
+      {
+        "expression": "{x}{y}",
+        "variables": {
+          "x": -0.0,
+          "y": 2.0
+        },
+        "error": "SyntaxError"
+      },
+      {
+        "expression": "{x}_0",
+        "variables": {
+          "x": 1e-05,
+          "y": 2.0
+        },
+        "value": 1e-50
+      },
+      {
+        "expression": "{x}.5",
+        "variables": {
+          "x": 1e-05,
+          "y": 2.0
+        },
+        "error": "SyntaxError"
+      },
+      {
+        "expression": "2{x}",
+        "variables": {
+          "x": 1e-05,
+          "y": 2.0
+        },
+        "value": 0.00021
+      },
+      {
+        "expression": "{x}^2",
+        "variables": {
+          "x": 1e-05,
+          "y": 2.0
+        },
+        "value": 1.0000000000000002e-10
+      },
+      {
+        "expression": "({x})^2",
+        "variables": {
+          "x": 1e-05,
+          "y": 2.0
+        },
+        "value": 1.0000000000000002e-10
+      },
+      {
+        "expression": "{x}{y}",
+        "variables": {
+          "x": 1e-05,
+          "y": 2.0
+        },
+        "error": "SyntaxError"
+      },
+      {
+        "expression": "{x}_0",
+        "variables": {
+          "x": 0.0001,
+          "y": 2.0
+        },
+        "value": 0.0001
+      },
+      {
+        "expression": "{x}.5",
+        "variables": {
+          "x": 0.0001,
+          "y": 2.0
+        },
+        "error": "SyntaxError"
+      },
+      {
+        "expression": "2{x}",
+        "variables": {
+          "x": 0.0001,
+          "y": 2.0
+        },
+        "value": 20.0001
+      },
+      {
+        "expression": "{x}^2",
+        "variables": {
+          "x": 0.0001,
+          "y": 2.0
+        },
+        "value": 1e-08
+      },
+      {
+        "expression": "({x})^2",
+        "variables": {
+          "x": 0.0001,
+          "y": 2.0
+        },
+        "value": 1e-08
+      },
+      {
+        "expression": "{x}{y}",
+        "variables": {
+          "x": 0.0001,
+          "y": 2.0
+        },
+        "error": "SyntaxError"
+      },
+      {
+        "expression": "{x}_0",
+        "variables": {
+          "x": 1000000000000000.0,
+          "y": 2.0
+        },
+        "value": 1000000000000000.0
+      },
+      {
+        "expression": "{x}.5",
+        "variables": {
+          "x": 1000000000000000.0,
+          "y": 2.0
+        },
+        "error": "SyntaxError"
+      },
+      {
+        "expression": "2{x}",
+        "variables": {
+          "x": 1000000000000000.0,
+          "y": 2.0
+        },
+        "value": 2.1e+16
+      },
+      {
+        "expression": "{x}^2",
+        "variables": {
+          "x": 1000000000000000.0,
+          "y": 2.0
+        },
+        "value": 1e+30
+      },
+      {
+        "expression": "({x})^2",
+        "variables": {
+          "x": 1000000000000000.0,
+          "y": 2.0
+        },
+        "value": 1e+30
+      },
+      {
+        "expression": "{x}{y}",
+        "variables": {
+          "x": 1000000000000000.0,
+          "y": 2.0
+        },
+        "error": "SyntaxError"
+      }
+    ],
+    "answer_label_cases": [
+      {
+        "index": 0,
+        "expected": "a"
+      },
+      {
+        "index": 1,
+        "expected": "b"
+      },
+      {
+        "index": 2,
+        "expected": "c"
+      },
+      {
+        "index": 3,
+        "expected": "d"
+      },
+      {
+        "index": 4,
+        "expected": "e"
+      },
+      {
+        "index": 5,
+        "expected": "f"
+      },
+      {
+        "index": 6,
+        "expected": "g"
+      },
+      {
+        "index": 7,
+        "expected": "h"
+      },
+      {
+        "index": 8,
+        "expected": "i"
+      },
+      {
+        "index": 9,
+        "expected": "j"
+      },
+      {
+        "index": 10,
+        "expected": "k"
+      },
+      {
+        "index": 11,
+        "expected": "l"
+      },
+      {
+        "index": 12,
+        "expected": "m"
+      },
+      {
+        "index": 13,
+        "expected": "n"
+      },
+      {
+        "index": 14,
+        "expected": "o"
+      },
+      {
+        "index": 15,
+        "expected": "p"
+      },
+      {
+        "index": 16,
+        "expected": "q"
+      },
+      {
+        "index": 17,
+        "expected": "r"
+      },
+      {
+        "index": 18,
+        "expected": "s"
+      },
+      {
+        "index": 19,
+        "expected": "t"
+      },
+      {
+        "index": 20,
+        "expected": "u"
+      },
+      {
+        "index": 21,
+        "expected": "v"
+      },
+      {
+        "index": 22,
+        "expected": "w"
+      },
+      {
+        "index": 23,
+        "expected": "x"
+      },
+      {
+        "index": 24,
+        "expected": "y"
+      },
+      {
+        "index": 25,
+        "expected": "z"
+      },
+      {
+        "index": 26,
+        "expected": "aa"
+      },
+      {
+        "index": 27,
+        "expected": "ab"
+      },
+      {
+        "index": 28,
+        "expected": "ac"
+      },
+      {
+        "index": 29,
+        "expected": "ad"
+      },
+      {
+        "index": 30,
+        "expected": "ae"
+      },
+      {
+        "index": 31,
+        "expected": "af"
+      },
+      {
+        "index": 32,
+        "expected": "ag"
+      },
+      {
+        "index": 33,
+        "expected": "ah"
+      },
+      {
+        "index": 34,
+        "expected": "ai"
+      },
+      {
+        "index": 35,
+        "expected": "aj"
+      },
+      {
+        "index": 36,
+        "expected": "ak"
+      },
+      {
+        "index": 37,
+        "expected": "al"
+      },
+      {
+        "index": 38,
+        "expected": "am"
+      },
+      {
+        "index": 39,
+        "expected": "an"
+      },
+      {
+        "index": 40,
+        "expected": "ao"
+      },
+      {
+        "index": 41,
+        "expected": "ap"
+      },
+      {
+        "index": 42,
+        "expected": "aq"
+      },
+      {
+        "index": 43,
+        "expected": "ar"
+      },
+      {
+        "index": 44,
+        "expected": "as"
+      },
+      {
+        "index": 45,
+        "expected": "at"
+      },
+      {
+        "index": 46,
+        "expected": "au"
+      },
+      {
+        "index": 47,
+        "expected": "av"
+      },
+      {
+        "index": 48,
+        "expected": "aw"
+      },
+      {
+        "index": 49,
+        "expected": "ax"
+      },
+      {
+        "index": 50,
+        "expected": "ay"
+      },
+      {
+        "index": 51,
+        "expected": "az"
+      },
+      {
+        "index": 52,
+        "expected": "ba"
+      },
+      {
+        "index": 53,
+        "expected": "bb"
+      },
+      {
+        "index": 54,
+        "expected": "bc"
+      },
+      {
+        "index": 55,
+        "expected": "bd"
+      },
+      {
+        "index": 56,
+        "expected": "be"
+      },
+      {
+        "index": 57,
+        "expected": "bf"
+      },
+      {
+        "index": 58,
+        "expected": "bg"
+      },
+      {
+        "index": 59,
+        "expected": "bh"
+      },
+      {
+        "index": 60,
+        "expected": "bi"
+      },
+      {
+        "index": 61,
+        "expected": "bj"
+      },
+      {
+        "index": 62,
+        "expected": "bk"
+      },
+      {
+        "index": 63,
+        "expected": "bl"
+      },
+      {
+        "index": 64,
+        "expected": "bm"
+      },
+      {
+        "index": 65,
+        "expected": "bn"
+      },
+      {
+        "index": 66,
+        "expected": "bo"
+      },
+      {
+        "index": 67,
+        "expected": "bp"
+      },
+      {
+        "index": 68,
+        "expected": "bq"
+      },
+      {
+        "index": 69,
+        "expected": "br"
+      },
+      {
+        "index": 70,
+        "expected": "bs"
+      },
+      {
+        "index": 71,
+        "expected": "bt"
+      },
+      {
+        "index": 72,
+        "expected": "bu"
+      },
+      {
+        "index": 73,
+        "expected": "bv"
+      },
+      {
+        "index": 74,
+        "expected": "bw"
+      },
+      {
+        "index": 75,
+        "expected": "bx"
+      },
+      {
+        "index": 76,
+        "expected": "by"
+      },
+      {
+        "index": 77,
+        "expected": "bz"
+      },
+      {
+        "index": 78,
+        "expected": "ca"
+      },
+      {
+        "index": 79,
+        "expected": "cb"
+      },
+      {
+        "index": 80,
+        "expected": "cc"
+      },
+      {
+        "index": 81,
+        "expected": "cd"
+      },
+      {
+        "index": 82,
+        "expected": "ce"
+      },
+      {
+        "index": 83,
+        "expected": "cf"
+      },
+      {
+        "index": 84,
+        "expected": "cg"
+      },
+      {
+        "index": 85,
+        "expected": "ch"
+      },
+      {
+        "index": 86,
+        "expected": "ci"
+      },
+      {
+        "index": 87,
+        "expected": "cj"
+      },
+      {
+        "index": 88,
+        "expected": "ck"
+      },
+      {
+        "index": 89,
+        "expected": "cl"
+      },
+      {
+        "index": 90,
+        "expected": "cm"
+      },
+      {
+        "index": 91,
+        "expected": "cn"
+      },
+      {
+        "index": 92,
+        "expected": "co"
+      },
+      {
+        "index": 93,
+        "expected": "cp"
+      },
+      {
+        "index": 94,
+        "expected": "cq"
+      },
+      {
+        "index": 95,
+        "expected": "cr"
+      },
+      {
+        "index": 96,
+        "expected": "cs"
+      },
+      {
+        "index": 97,
+        "expected": "ct"
+      },
+      {
+        "index": 98,
+        "expected": "cu"
+      },
+      {
+        "index": 99,
+        "expected": "cv"
+      },
+      {
+        "index": 100,
+        "expected": "cw"
+      },
+      {
+        "index": 101,
+        "expected": "cx"
+      },
+      {
+        "index": 102,
+        "expected": "cy"
+      },
+      {
+        "index": 103,
+        "expected": "cz"
+      },
+      {
+        "index": 104,
+        "expected": "da"
+      },
+      {
+        "index": 105,
+        "expected": "db"
+      },
+      {
+        "index": 106,
+        "expected": "dc"
+      },
+      {
+        "index": 107,
+        "expected": "dd"
+      },
+      {
+        "index": 108,
+        "expected": "de"
+      },
+      {
+        "index": 109,
+        "expected": "df"
+      },
+      {
+        "index": 110,
+        "expected": "dg"
+      },
+      {
+        "index": 111,
+        "expected": "dh"
+      },
+      {
+        "index": 112,
+        "expected": "di"
+      },
+      {
+        "index": 113,
+        "expected": "dj"
+      },
+      {
+        "index": 114,
+        "expected": "dk"
+      },
+      {
+        "index": 115,
+        "expected": "dl"
+      },
+      {
+        "index": 116,
+        "expected": "dm"
+      },
+      {
+        "index": 117,
+        "expected": "dn"
+      },
+      {
+        "index": 118,
+        "expected": "do"
+      },
+      {
+        "index": 119,
+        "expected": "dp"
+      },
+      {
+        "index": 120,
+        "expected": "dq"
+      },
+      {
+        "index": 121,
+        "expected": "dr"
+      },
+      {
+        "index": 122,
+        "expected": "ds"
+      },
+      {
+        "index": 123,
+        "expected": "dt"
+      },
+      {
+        "index": 124,
+        "expected": "du"
+      },
+      {
+        "index": 125,
+        "expected": "dv"
+      },
+      {
+        "index": 126,
+        "expected": "dw"
+      },
+      {
+        "index": 127,
+        "expected": "dx"
+      },
+      {
+        "index": 128,
+        "expected": "dy"
+      },
+      {
+        "index": 129,
+        "expected": "dz"
+      },
+      {
+        "index": 130,
+        "expected": "ea"
+      },
+      {
+        "index": 131,
+        "expected": "eb"
+      },
+      {
+        "index": 132,
+        "expected": "ec"
+      },
+      {
+        "index": 133,
+        "expected": "ed"
+      },
+      {
+        "index": 134,
+        "expected": "ee"
+      },
+      {
+        "index": 135,
+        "expected": "ef"
+      },
+      {
+        "index": 136,
+        "expected": "eg"
+      },
+      {
+        "index": 137,
+        "expected": "eh"
+      },
+      {
+        "index": 138,
+        "expected": "ei"
+      },
+      {
+        "index": 139,
+        "expected": "ej"
+      },
+      {
+        "index": 140,
+        "expected": "ek"
+      },
+      {
+        "index": 141,
+        "expected": "el"
+      },
+      {
+        "index": 142,
+        "expected": "em"
+      },
+      {
+        "index": 143,
+        "expected": "en"
+      },
+      {
+        "index": 144,
+        "expected": "eo"
+      },
+      {
+        "index": 145,
+        "expected": "ep"
+      },
+      {
+        "index": 146,
+        "expected": "eq"
+      },
+      {
+        "index": 147,
+        "expected": "er"
+      },
+      {
+        "index": 148,
+        "expected": "es"
+      },
+      {
+        "index": 149,
+        "expected": "et"
+      },
+      {
+        "index": 150,
+        "expected": "eu"
+      },
+      {
+        "index": 151,
+        "expected": "ev"
+      },
+      {
+        "index": 152,
+        "expected": "ew"
+      },
+      {
+        "index": 153,
+        "expected": "ex"
+      },
+      {
+        "index": 154,
+        "expected": "ey"
+      },
+      {
+        "index": 155,
+        "expected": "ez"
+      },
+      {
+        "index": 156,
+        "expected": "fa"
+      },
+      {
+        "index": 157,
+        "expected": "fb"
+      },
+      {
+        "index": 158,
+        "expected": "fc"
+      },
+      {
+        "index": 159,
+        "expected": "fd"
+      },
+      {
+        "index": 160,
+        "expected": "fe"
+      },
+      {
+        "index": 161,
+        "expected": "ff"
+      },
+      {
+        "index": 162,
+        "expected": "fg"
+      },
+      {
+        "index": 163,
+        "expected": "fh"
+      },
+      {
+        "index": 164,
+        "expected": "fi"
+      },
+      {
+        "index": 165,
+        "expected": "fj"
+      },
+      {
+        "index": 166,
+        "expected": "fk"
+      },
+      {
+        "index": 167,
+        "expected": "fl"
+      },
+      {
+        "index": 168,
+        "expected": "fm"
+      },
+      {
+        "index": 169,
+        "expected": "fn"
+      },
+      {
+        "index": 170,
+        "expected": "fo"
+      },
+      {
+        "index": 171,
+        "expected": "fp"
+      },
+      {
+        "index": 172,
+        "expected": "fq"
+      },
+      {
+        "index": 173,
+        "expected": "fr"
+      },
+      {
+        "index": 174,
+        "expected": "fs"
+      },
+      {
+        "index": 175,
+        "expected": "ft"
+      },
+      {
+        "index": 176,
+        "expected": "fu"
+      },
+      {
+        "index": 177,
+        "expected": "fv"
+      },
+      {
+        "index": 178,
+        "expected": "fw"
+      },
+      {
+        "index": 179,
+        "expected": "fx"
+      },
+      {
+        "index": 180,
+        "expected": "fy"
+      },
+      {
+        "index": 181,
+        "expected": "fz"
+      },
+      {
+        "index": 182,
+        "expected": "ga"
+      },
+      {
+        "index": 183,
+        "expected": "gb"
+      },
+      {
+        "index": 184,
+        "expected": "gc"
+      },
+      {
+        "index": 185,
+        "expected": "gd"
+      },
+      {
+        "index": 186,
+        "expected": "ge"
+      },
+      {
+        "index": 187,
+        "expected": "gf"
+      },
+      {
+        "index": 188,
+        "expected": "gg"
+      },
+      {
+        "index": 189,
+        "expected": "gh"
+      },
+      {
+        "index": 190,
+        "expected": "gi"
+      },
+      {
+        "index": 191,
+        "expected": "gj"
+      },
+      {
+        "index": 192,
+        "expected": "gk"
+      },
+      {
+        "index": 193,
+        "expected": "gl"
+      },
+      {
+        "index": 194,
+        "expected": "gm"
+      },
+      {
+        "index": 195,
+        "expected": "gn"
+      },
+      {
+        "index": 196,
+        "expected": "go"
+      },
+      {
+        "index": 197,
+        "expected": "gp"
+      },
+      {
+        "index": 198,
+        "expected": "gq"
+      },
+      {
+        "index": 199,
+        "expected": "gr"
+      },
+      {
+        "index": 200,
+        "expected": "gs"
+      },
+      {
+        "index": 201,
+        "expected": "gt"
+      },
+      {
+        "index": 202,
+        "expected": "gu"
+      },
+      {
+        "index": 203,
+        "expected": "gv"
+      },
+      {
+        "index": 204,
+        "expected": "gw"
+      },
+      {
+        "index": 205,
+        "expected": "gx"
+      },
+      {
+        "index": 206,
+        "expected": "gy"
+      },
+      {
+        "index": 207,
+        "expected": "gz"
+      },
+      {
+        "index": 208,
+        "expected": "ha"
+      },
+      {
+        "index": 209,
+        "expected": "hb"
+      },
+      {
+        "index": 210,
+        "expected": "hc"
+      },
+      {
+        "index": 211,
+        "expected": "hd"
+      },
+      {
+        "index": 212,
+        "expected": "he"
+      },
+      {
+        "index": 213,
+        "expected": "hf"
+      },
+      {
+        "index": 214,
+        "expected": "hg"
+      },
+      {
+        "index": 215,
+        "expected": "hh"
+      },
+      {
+        "index": 216,
+        "expected": "hi"
+      },
+      {
+        "index": 217,
+        "expected": "hj"
+      },
+      {
+        "index": 218,
+        "expected": "hk"
+      },
+      {
+        "index": 219,
+        "expected": "hl"
+      },
+      {
+        "index": 220,
+        "expected": "hm"
+      },
+      {
+        "index": 221,
+        "expected": "hn"
+      },
+      {
+        "index": 222,
+        "expected": "ho"
+      },
+      {
+        "index": 223,
+        "expected": "hp"
+      },
+      {
+        "index": 224,
+        "expected": "hq"
+      },
+      {
+        "index": 225,
+        "expected": "hr"
+      },
+      {
+        "index": 226,
+        "expected": "hs"
+      },
+      {
+        "index": 227,
+        "expected": "ht"
+      },
+      {
+        "index": 228,
+        "expected": "hu"
+      },
+      {
+        "index": 229,
+        "expected": "hv"
+      },
+      {
+        "index": 230,
+        "expected": "hw"
+      },
+      {
+        "index": 231,
+        "expected": "hx"
+      },
+      {
+        "index": 232,
+        "expected": "hy"
+      },
+      {
+        "index": 233,
+        "expected": "hz"
+      },
+      {
+        "index": 234,
+        "expected": "ia"
+      },
+      {
+        "index": 235,
+        "expected": "ib"
+      },
+      {
+        "index": 236,
+        "expected": "ic"
+      },
+      {
+        "index": 237,
+        "expected": "id"
+      },
+      {
+        "index": 238,
+        "expected": "ie"
+      },
+      {
+        "index": 239,
+        "expected": "if"
+      },
+      {
+        "index": 240,
+        "expected": "ig"
+      },
+      {
+        "index": 241,
+        "expected": "ih"
+      },
+      {
+        "index": 242,
+        "expected": "ii"
+      },
+      {
+        "index": 243,
+        "expected": "ij"
+      },
+      {
+        "index": 244,
+        "expected": "ik"
+      },
+      {
+        "index": 245,
+        "expected": "il"
+      },
+      {
+        "index": 246,
+        "expected": "im"
+      },
+      {
+        "index": 247,
+        "expected": "in"
+      },
+      {
+        "index": 248,
+        "expected": "io"
+      },
+      {
+        "index": 249,
+        "expected": "ip"
+      },
+      {
+        "index": 250,
+        "expected": "iq"
+      },
+      {
+        "index": 251,
+        "expected": "ir"
+      },
+      {
+        "index": 252,
+        "expected": "is"
+      },
+      {
+        "index": 253,
+        "expected": "it"
+      },
+      {
+        "index": 254,
+        "expected": "iu"
+      },
+      {
+        "index": 255,
+        "expected": "iv"
+      },
+      {
+        "index": 256,
+        "expected": "iw"
+      },
+      {
+        "index": 257,
+        "expected": "ix"
+      },
+      {
+        "index": 258,
+        "expected": "iy"
+      },
+      {
+        "index": 259,
+        "expected": "iz"
+      },
+      {
+        "index": 260,
+        "expected": "ja"
+      },
+      {
+        "index": 261,
+        "expected": "jb"
+      },
+      {
+        "index": 262,
+        "expected": "jc"
+      },
+      {
+        "index": 263,
+        "expected": "jd"
+      },
+      {
+        "index": 264,
+        "expected": "je"
+      },
+      {
+        "index": 265,
+        "expected": "jf"
+      },
+      {
+        "index": 266,
+        "expected": "jg"
+      },
+      {
+        "index": 267,
+        "expected": "jh"
+      },
+      {
+        "index": 268,
+        "expected": "ji"
+      },
+      {
+        "index": 269,
+        "expected": "jj"
+      },
+      {
+        "index": 270,
+        "expected": "jk"
+      },
+      {
+        "index": 271,
+        "expected": "jl"
+      },
+      {
+        "index": 272,
+        "expected": "jm"
+      },
+      {
+        "index": 273,
+        "expected": "jn"
+      },
+      {
+        "index": 274,
+        "expected": "jo"
+      },
+      {
+        "index": 275,
+        "expected": "jp"
+      },
+      {
+        "index": 276,
+        "expected": "jq"
+      },
+      {
+        "index": 277,
+        "expected": "jr"
+      },
+      {
+        "index": 278,
+        "expected": "js"
+      },
+      {
+        "index": 279,
+        "expected": "jt"
+      },
+      {
+        "index": 280,
+        "expected": "ju"
+      },
+      {
+        "index": 281,
+        "expected": "jv"
+      },
+      {
+        "index": 282,
+        "expected": "jw"
+      },
+      {
+        "index": 283,
+        "expected": "jx"
+      },
+      {
+        "index": 284,
+        "expected": "jy"
+      },
+      {
+        "index": 285,
+        "expected": "jz"
+      },
+      {
+        "index": 286,
+        "expected": "ka"
+      },
+      {
+        "index": 287,
+        "expected": "kb"
+      },
+      {
+        "index": 288,
+        "expected": "kc"
+      },
+      {
+        "index": 289,
+        "expected": "kd"
+      },
+      {
+        "index": 290,
+        "expected": "ke"
+      },
+      {
+        "index": 291,
+        "expected": "kf"
+      },
+      {
+        "index": 292,
+        "expected": "kg"
+      },
+      {
+        "index": 293,
+        "expected": "kh"
+      },
+      {
+        "index": 294,
+        "expected": "ki"
+      },
+      {
+        "index": 295,
+        "expected": "kj"
+      },
+      {
+        "index": 296,
+        "expected": "kk"
+      },
+      {
+        "index": 297,
+        "expected": "kl"
+      },
+      {
+        "index": 298,
+        "expected": "km"
+      },
+      {
+        "index": 299,
+        "expected": "kn"
+      },
+      {
+        "index": 300,
+        "expected": "ko"
+      },
+      {
+        "index": 301,
+        "expected": "kp"
+      },
+      {
+        "index": 302,
+        "expected": "kq"
+      },
+      {
+        "index": 303,
+        "expected": "kr"
+      },
+      {
+        "index": 304,
+        "expected": "ks"
+      },
+      {
+        "index": 305,
+        "expected": "kt"
+      },
+      {
+        "index": 306,
+        "expected": "ku"
+      },
+      {
+        "index": 307,
+        "expected": "kv"
+      },
+      {
+        "index": 308,
+        "expected": "kw"
+      },
+      {
+        "index": 309,
+        "expected": "kx"
+      },
+      {
+        "index": 310,
+        "expected": "ky"
+      },
+      {
+        "index": 311,
+        "expected": "kz"
+      },
+      {
+        "index": 312,
+        "expected": "la"
+      },
+      {
+        "index": 313,
+        "expected": "lb"
+      },
+      {
+        "index": 314,
+        "expected": "lc"
+      },
+      {
+        "index": 315,
+        "expected": "ld"
+      },
+      {
+        "index": 316,
+        "expected": "le"
+      },
+      {
+        "index": 317,
+        "expected": "lf"
+      },
+      {
+        "index": 318,
+        "expected": "lg"
+      },
+      {
+        "index": 319,
+        "expected": "lh"
+      },
+      {
+        "index": 320,
+        "expected": "li"
+      },
+      {
+        "index": 321,
+        "expected": "lj"
+      },
+      {
+        "index": 322,
+        "expected": "lk"
+      },
+      {
+        "index": 323,
+        "expected": "ll"
+      },
+      {
+        "index": 324,
+        "expected": "lm"
+      },
+      {
+        "index": 325,
+        "expected": "ln"
+      },
+      {
+        "index": 326,
+        "expected": "lo"
+      },
+      {
+        "index": 327,
+        "expected": "lp"
+      },
+      {
+        "index": 328,
+        "expected": "lq"
+      },
+      {
+        "index": 329,
+        "expected": "lr"
+      },
+      {
+        "index": 330,
+        "expected": "ls"
+      },
+      {
+        "index": 331,
+        "expected": "lt"
+      },
+      {
+        "index": 332,
+        "expected": "lu"
+      },
+      {
+        "index": 333,
+        "expected": "lv"
+      },
+      {
+        "index": 334,
+        "expected": "lw"
+      },
+      {
+        "index": 335,
+        "expected": "lx"
+      },
+      {
+        "index": 336,
+        "expected": "ly"
+      },
+      {
+        "index": 337,
+        "expected": "lz"
+      },
+      {
+        "index": 338,
+        "expected": "ma"
+      },
+      {
+        "index": 339,
+        "expected": "mb"
+      },
+      {
+        "index": 340,
+        "expected": "mc"
+      },
+      {
+        "index": 341,
+        "expected": "md"
+      },
+      {
+        "index": 342,
+        "expected": "me"
+      },
+      {
+        "index": 343,
+        "expected": "mf"
+      },
+      {
+        "index": 344,
+        "expected": "mg"
+      },
+      {
+        "index": 345,
+        "expected": "mh"
+      },
+      {
+        "index": 346,
+        "expected": "mi"
+      },
+      {
+        "index": 347,
+        "expected": "mj"
+      },
+      {
+        "index": 348,
+        "expected": "mk"
+      },
+      {
+        "index": 349,
+        "expected": "ml"
+      },
+      {
+        "index": 350,
+        "expected": "mm"
+      },
+      {
+        "index": 351,
+        "expected": "mn"
+      },
+      {
+        "index": 352,
+        "expected": "mo"
+      },
+      {
+        "index": 353,
+        "expected": "mp"
+      },
+      {
+        "index": 354,
+        "expected": "mq"
+      },
+      {
+        "index": 355,
+        "expected": "mr"
+      },
+      {
+        "index": 356,
+        "expected": "ms"
+      },
+      {
+        "index": 357,
+        "expected": "mt"
+      },
+      {
+        "index": 358,
+        "expected": "mu"
+      },
+      {
+        "index": 359,
+        "expected": "mv"
+      },
+      {
+        "index": 360,
+        "expected": "mw"
+      },
+      {
+        "index": 361,
+        "expected": "mx"
+      },
+      {
+        "index": 362,
+        "expected": "my"
+      },
+      {
+        "index": 363,
+        "expected": "mz"
+      },
+      {
+        "index": 364,
+        "expected": "na"
+      },
+      {
+        "index": 365,
+        "expected": "nb"
+      },
+      {
+        "index": 366,
+        "expected": "nc"
+      },
+      {
+        "index": 367,
+        "expected": "nd"
+      },
+      {
+        "index": 368,
+        "expected": "ne"
+      },
+      {
+        "index": 369,
+        "expected": "nf"
+      },
+      {
+        "index": 370,
+        "expected": "ng"
+      },
+      {
+        "index": 371,
+        "expected": "nh"
+      },
+      {
+        "index": 372,
+        "expected": "ni"
+      },
+      {
+        "index": 373,
+        "expected": "nj"
+      },
+      {
+        "index": 374,
+        "expected": "nk"
+      },
+      {
+        "index": 375,
+        "expected": "nl"
+      },
+      {
+        "index": 376,
+        "expected": "nm"
+      },
+      {
+        "index": 377,
+        "expected": "nn"
+      },
+      {
+        "index": 378,
+        "expected": "no"
+      },
+      {
+        "index": 379,
+        "expected": "np"
+      },
+      {
+        "index": 380,
+        "expected": "nq"
+      },
+      {
+        "index": 381,
+        "expected": "nr"
+      },
+      {
+        "index": 382,
+        "expected": "ns"
+      },
+      {
+        "index": 383,
+        "expected": "nt"
+      },
+      {
+        "index": 384,
+        "expected": "nu"
+      },
+      {
+        "index": 385,
+        "expected": "nv"
+      },
+      {
+        "index": 386,
+        "expected": "nw"
+      },
+      {
+        "index": 387,
+        "expected": "nx"
+      },
+      {
+        "index": 388,
+        "expected": "ny"
+      },
+      {
+        "index": 389,
+        "expected": "nz"
+      },
+      {
+        "index": 390,
+        "expected": "oa"
+      },
+      {
+        "index": 391,
+        "expected": "ob"
+      },
+      {
+        "index": 392,
+        "expected": "oc"
+      },
+      {
+        "index": 393,
+        "expected": "od"
+      },
+      {
+        "index": 394,
+        "expected": "oe"
+      },
+      {
+        "index": 395,
+        "expected": "of"
+      },
+      {
+        "index": 396,
+        "expected": "og"
+      },
+      {
+        "index": 397,
+        "expected": "oh"
+      },
+      {
+        "index": 398,
+        "expected": "oi"
+      },
+      {
+        "index": 399,
+        "expected": "oj"
+      },
+      {
+        "index": 400,
+        "expected": "ok"
+      },
+      {
+        "index": 401,
+        "expected": "ol"
+      },
+      {
+        "index": 402,
+        "expected": "om"
+      },
+      {
+        "index": 403,
+        "expected": "on"
+      },
+      {
+        "index": 404,
+        "expected": "oo"
+      },
+      {
+        "index": 405,
+        "expected": "op"
+      },
+      {
+        "index": 406,
+        "expected": "oq"
+      },
+      {
+        "index": 407,
+        "expected": "or"
+      },
+      {
+        "index": 408,
+        "expected": "os"
+      },
+      {
+        "index": 409,
+        "expected": "ot"
+      },
+      {
+        "index": 410,
+        "expected": "ou"
+      },
+      {
+        "index": 411,
+        "expected": "ov"
+      },
+      {
+        "index": 412,
+        "expected": "ow"
+      },
+      {
+        "index": 413,
+        "expected": "ox"
+      },
+      {
+        "index": 414,
+        "expected": "oy"
+      },
+      {
+        "index": 415,
+        "expected": "oz"
+      },
+      {
+        "index": 416,
+        "expected": "pa"
+      },
+      {
+        "index": 417,
+        "expected": "pb"
+      },
+      {
+        "index": 418,
+        "expected": "pc"
+      },
+      {
+        "index": 419,
+        "expected": "pd"
+      },
+      {
+        "index": 420,
+        "expected": "pe"
+      },
+      {
+        "index": 421,
+        "expected": "pf"
+      },
+      {
+        "index": 422,
+        "expected": "pg"
+      },
+      {
+        "index": 423,
+        "expected": "ph"
+      },
+      {
+        "index": 424,
+        "expected": "pi"
+      },
+      {
+        "index": 425,
+        "expected": "pj"
+      },
+      {
+        "index": 426,
+        "expected": "pk"
+      },
+      {
+        "index": 427,
+        "expected": "pl"
+      },
+      {
+        "index": 428,
+        "expected": "pm"
+      },
+      {
+        "index": 429,
+        "expected": "pn"
+      },
+      {
+        "index": 430,
+        "expected": "po"
+      },
+      {
+        "index": 431,
+        "expected": "pp"
+      },
+      {
+        "index": 432,
+        "expected": "pq"
+      },
+      {
+        "index": 433,
+        "expected": "pr"
+      },
+      {
+        "index": 434,
+        "expected": "ps"
+      },
+      {
+        "index": 435,
+        "expected": "pt"
+      },
+      {
+        "index": 436,
+        "expected": "pu"
+      },
+      {
+        "index": 437,
+        "expected": "pv"
+      },
+      {
+        "index": 438,
+        "expected": "pw"
+      },
+      {
+        "index": 439,
+        "expected": "px"
+      },
+      {
+        "index": 440,
+        "expected": "py"
+      },
+      {
+        "index": 441,
+        "expected": "pz"
+      },
+      {
+        "index": 442,
+        "expected": "qa"
+      },
+      {
+        "index": 443,
+        "expected": "qb"
+      },
+      {
+        "index": 444,
+        "expected": "qc"
+      },
+      {
+        "index": 445,
+        "expected": "qd"
+      },
+      {
+        "index": 446,
+        "expected": "qe"
+      },
+      {
+        "index": 447,
+        "expected": "qf"
+      },
+      {
+        "index": 448,
+        "expected": "qg"
+      },
+      {
+        "index": 449,
+        "expected": "qh"
+      },
+      {
+        "index": 450,
+        "expected": "qi"
+      },
+      {
+        "index": 451,
+        "expected": "qj"
+      },
+      {
+        "index": 452,
+        "expected": "qk"
+      },
+      {
+        "index": 453,
+        "expected": "ql"
+      },
+      {
+        "index": 454,
+        "expected": "qm"
+      },
+      {
+        "index": 455,
+        "expected": "qn"
+      },
+      {
+        "index": 456,
+        "expected": "qo"
+      },
+      {
+        "index": 457,
+        "expected": "qp"
+      },
+      {
+        "index": 458,
+        "expected": "qq"
+      },
+      {
+        "index": 459,
+        "expected": "qr"
+      },
+      {
+        "index": 460,
+        "expected": "qs"
+      },
+      {
+        "index": 461,
+        "expected": "qt"
+      },
+      {
+        "index": 462,
+        "expected": "qu"
+      },
+      {
+        "index": 463,
+        "expected": "qv"
+      },
+      {
+        "index": 464,
+        "expected": "qw"
+      },
+      {
+        "index": 465,
+        "expected": "qx"
+      },
+      {
+        "index": 466,
+        "expected": "qy"
+      },
+      {
+        "index": 467,
+        "expected": "qz"
+      },
+      {
+        "index": 468,
+        "expected": "ra"
+      },
+      {
+        "index": 469,
+        "expected": "rb"
+      },
+      {
+        "index": 470,
+        "expected": "rc"
+      },
+      {
+        "index": 471,
+        "expected": "rd"
+      },
+      {
+        "index": 472,
+        "expected": "re"
+      },
+      {
+        "index": 473,
+        "expected": "rf"
+      },
+      {
+        "index": 474,
+        "expected": "rg"
+      },
+      {
+        "index": 475,
+        "expected": "rh"
+      },
+      {
+        "index": 476,
+        "expected": "ri"
+      },
+      {
+        "index": 477,
+        "expected": "rj"
+      },
+      {
+        "index": 478,
+        "expected": "rk"
+      },
+      {
+        "index": 479,
+        "expected": "rl"
+      },
+      {
+        "index": 480,
+        "expected": "rm"
+      },
+      {
+        "index": 481,
+        "expected": "rn"
+      },
+      {
+        "index": 482,
+        "expected": "ro"
+      },
+      {
+        "index": 483,
+        "expected": "rp"
+      },
+      {
+        "index": 484,
+        "expected": "rq"
+      },
+      {
+        "index": 485,
+        "expected": "rr"
+      },
+      {
+        "index": 486,
+        "expected": "rs"
+      },
+      {
+        "index": 487,
+        "expected": "rt"
+      },
+      {
+        "index": 488,
+        "expected": "ru"
+      },
+      {
+        "index": 489,
+        "expected": "rv"
+      },
+      {
+        "index": 490,
+        "expected": "rw"
+      },
+      {
+        "index": 491,
+        "expected": "rx"
+      },
+      {
+        "index": 492,
+        "expected": "ry"
+      },
+      {
+        "index": 493,
+        "expected": "rz"
+      },
+      {
+        "index": 494,
+        "expected": "sa"
+      },
+      {
+        "index": 495,
+        "expected": "sb"
+      },
+      {
+        "index": 496,
+        "expected": "sc"
+      },
+      {
+        "index": 497,
+        "expected": "sd"
+      },
+      {
+        "index": 498,
+        "expected": "se"
+      },
+      {
+        "index": 499,
+        "expected": "sf"
+      },
+      {
+        "index": 500,
+        "expected": "sg"
+      },
+      {
+        "index": 501,
+        "expected": "sh"
+      },
+      {
+        "index": 502,
+        "expected": "si"
+      },
+      {
+        "index": 503,
+        "expected": "sj"
+      },
+      {
+        "index": 504,
+        "expected": "sk"
+      },
+      {
+        "index": 505,
+        "expected": "sl"
+      },
+      {
+        "index": 506,
+        "expected": "sm"
+      },
+      {
+        "index": 507,
+        "expected": "sn"
+      },
+      {
+        "index": 508,
+        "expected": "so"
+      },
+      {
+        "index": 509,
+        "expected": "sp"
+      },
+      {
+        "index": 510,
+        "expected": "sq"
+      },
+      {
+        "index": 511,
+        "expected": "sr"
+      },
+      {
+        "index": 512,
+        "expected": "ss"
+      },
+      {
+        "index": 513,
+        "expected": "st"
+      },
+      {
+        "index": 514,
+        "expected": "su"
+      },
+      {
+        "index": 515,
+        "expected": "sv"
+      },
+      {
+        "index": 516,
+        "expected": "sw"
+      },
+      {
+        "index": 517,
+        "expected": "sx"
+      },
+      {
+        "index": 518,
+        "expected": "sy"
+      },
+      {
+        "index": 519,
+        "expected": "sz"
+      },
+      {
+        "index": 520,
+        "expected": "ta"
+      },
+      {
+        "index": 521,
+        "expected": "tb"
+      },
+      {
+        "index": 522,
+        "expected": "tc"
+      },
+      {
+        "index": 523,
+        "expected": "td"
+      },
+      {
+        "index": 524,
+        "expected": "te"
+      },
+      {
+        "index": 525,
+        "expected": "tf"
+      },
+      {
+        "index": 526,
+        "expected": "tg"
+      },
+      {
+        "index": 527,
+        "expected": "th"
+      },
+      {
+        "index": 528,
+        "expected": "ti"
+      },
+      {
+        "index": 529,
+        "expected": "tj"
+      },
+      {
+        "index": 530,
+        "expected": "tk"
+      },
+      {
+        "index": 531,
+        "expected": "tl"
+      },
+      {
+        "index": 532,
+        "expected": "tm"
+      },
+      {
+        "index": 533,
+        "expected": "tn"
+      },
+      {
+        "index": 534,
+        "expected": "to"
+      },
+      {
+        "index": 535,
+        "expected": "tp"
+      },
+      {
+        "index": 536,
+        "expected": "tq"
+      },
+      {
+        "index": 537,
+        "expected": "tr"
+      },
+      {
+        "index": 538,
+        "expected": "ts"
+      },
+      {
+        "index": 539,
+        "expected": "tt"
+      },
+      {
+        "index": 540,
+        "expected": "tu"
+      },
+      {
+        "index": 541,
+        "expected": "tv"
+      },
+      {
+        "index": 542,
+        "expected": "tw"
+      },
+      {
+        "index": 543,
+        "expected": "tx"
+      },
+      {
+        "index": 544,
+        "expected": "ty"
+      },
+      {
+        "index": 545,
+        "expected": "tz"
+      },
+      {
+        "index": 546,
+        "expected": "ua"
+      },
+      {
+        "index": 547,
+        "expected": "ub"
+      },
+      {
+        "index": 548,
+        "expected": "uc"
+      },
+      {
+        "index": 549,
+        "expected": "ud"
+      },
+      {
+        "index": 550,
+        "expected": "ue"
+      },
+      {
+        "index": 551,
+        "expected": "uf"
+      },
+      {
+        "index": 552,
+        "expected": "ug"
+      },
+      {
+        "index": 553,
+        "expected": "uh"
+      },
+      {
+        "index": 554,
+        "expected": "ui"
+      },
+      {
+        "index": 555,
+        "expected": "uj"
+      },
+      {
+        "index": 556,
+        "expected": "uk"
+      },
+      {
+        "index": 557,
+        "expected": "ul"
+      },
+      {
+        "index": 558,
+        "expected": "um"
+      },
+      {
+        "index": 559,
+        "expected": "un"
+      },
+      {
+        "index": 560,
+        "expected": "uo"
+      },
+      {
+        "index": 561,
+        "expected": "up"
+      },
+      {
+        "index": 562,
+        "expected": "uq"
+      },
+      {
+        "index": 563,
+        "expected": "ur"
+      },
+      {
+        "index": 564,
+        "expected": "us"
+      },
+      {
+        "index": 565,
+        "expected": "ut"
+      },
+      {
+        "index": 566,
+        "expected": "uu"
+      },
+      {
+        "index": 567,
+        "expected": "uv"
+      },
+      {
+        "index": 568,
+        "expected": "uw"
+      },
+      {
+        "index": 569,
+        "expected": "ux"
+      },
+      {
+        "index": 570,
+        "expected": "uy"
+      },
+      {
+        "index": 571,
+        "expected": "uz"
+      },
+      {
+        "index": 572,
+        "expected": "va"
+      },
+      {
+        "index": 573,
+        "expected": "vb"
+      },
+      {
+        "index": 574,
+        "expected": "vc"
+      },
+      {
+        "index": 575,
+        "expected": "vd"
+      },
+      {
+        "index": 576,
+        "expected": "ve"
+      },
+      {
+        "index": 577,
+        "expected": "vf"
+      },
+      {
+        "index": 578,
+        "expected": "vg"
+      },
+      {
+        "index": 579,
+        "expected": "vh"
+      },
+      {
+        "index": 580,
+        "expected": "vi"
+      },
+      {
+        "index": 581,
+        "expected": "vj"
+      },
+      {
+        "index": 582,
+        "expected": "vk"
+      },
+      {
+        "index": 583,
+        "expected": "vl"
+      },
+      {
+        "index": 584,
+        "expected": "vm"
+      },
+      {
+        "index": 585,
+        "expected": "vn"
+      },
+      {
+        "index": 586,
+        "expected": "vo"
+      },
+      {
+        "index": 587,
+        "expected": "vp"
+      },
+      {
+        "index": 588,
+        "expected": "vq"
+      },
+      {
+        "index": 589,
+        "expected": "vr"
+      },
+      {
+        "index": 590,
+        "expected": "vs"
+      },
+      {
+        "index": 591,
+        "expected": "vt"
+      },
+      {
+        "index": 592,
+        "expected": "vu"
+      },
+      {
+        "index": 593,
+        "expected": "vv"
+      },
+      {
+        "index": 594,
+        "expected": "vw"
+      },
+      {
+        "index": 595,
+        "expected": "vx"
+      },
+      {
+        "index": 596,
+        "expected": "vy"
+      },
+      {
+        "index": 597,
+        "expected": "vz"
+      },
+      {
+        "index": 598,
+        "expected": "wa"
+      },
+      {
+        "index": 599,
+        "expected": "wb"
+      },
+      {
+        "index": 600,
+        "expected": "wc"
+      },
+      {
+        "index": 601,
+        "expected": "wd"
+      },
+      {
+        "index": 602,
+        "expected": "we"
+      },
+      {
+        "index": 603,
+        "expected": "wf"
+      },
+      {
+        "index": 604,
+        "expected": "wg"
+      },
+      {
+        "index": 605,
+        "expected": "wh"
+      },
+      {
+        "index": 606,
+        "expected": "wi"
+      },
+      {
+        "index": 607,
+        "expected": "wj"
+      },
+      {
+        "index": 608,
+        "expected": "wk"
+      },
+      {
+        "index": 609,
+        "expected": "wl"
+      },
+      {
+        "index": 610,
+        "expected": "wm"
+      },
+      {
+        "index": 611,
+        "expected": "wn"
+      },
+      {
+        "index": 612,
+        "expected": "wo"
+      },
+      {
+        "index": 613,
+        "expected": "wp"
+      },
+      {
+        "index": 614,
+        "expected": "wq"
+      },
+      {
+        "index": 615,
+        "expected": "wr"
+      },
+      {
+        "index": 616,
+        "expected": "ws"
+      },
+      {
+        "index": 617,
+        "expected": "wt"
+      },
+      {
+        "index": 618,
+        "expected": "wu"
+      },
+      {
+        "index": 619,
+        "expected": "wv"
+      },
+      {
+        "index": 620,
+        "expected": "ww"
+      },
+      {
+        "index": 621,
+        "expected": "wx"
+      },
+      {
+        "index": 622,
+        "expected": "wy"
+      },
+      {
+        "index": 623,
+        "expected": "wz"
+      },
+      {
+        "index": 624,
+        "expected": "xa"
+      },
+      {
+        "index": 625,
+        "expected": "xb"
+      },
+      {
+        "index": 626,
+        "expected": "xc"
+      },
+      {
+        "index": 627,
+        "expected": "xd"
+      },
+      {
+        "index": 628,
+        "expected": "xe"
+      },
+      {
+        "index": 629,
+        "expected": "xf"
+      },
+      {
+        "index": 630,
+        "expected": "xg"
+      },
+      {
+        "index": 631,
+        "expected": "xh"
+      },
+      {
+        "index": 632,
+        "expected": "xi"
+      },
+      {
+        "index": 633,
+        "expected": "xj"
+      },
+      {
+        "index": 634,
+        "expected": "xk"
+      },
+      {
+        "index": 635,
+        "expected": "xl"
+      },
+      {
+        "index": 636,
+        "expected": "xm"
+      },
+      {
+        "index": 637,
+        "expected": "xn"
+      },
+      {
+        "index": 638,
+        "expected": "xo"
+      },
+      {
+        "index": 639,
+        "expected": "xp"
+      },
+      {
+        "index": 640,
+        "expected": "xq"
+      },
+      {
+        "index": 641,
+        "expected": "xr"
+      },
+      {
+        "index": 642,
+        "expected": "xs"
+      },
+      {
+        "index": 643,
+        "expected": "xt"
+      },
+      {
+        "index": 644,
+        "expected": "xu"
+      },
+      {
+        "index": 645,
+        "expected": "xv"
+      },
+      {
+        "index": 646,
+        "expected": "xw"
+      },
+      {
+        "index": 647,
+        "expected": "xx"
+      },
+      {
+        "index": 648,
+        "expected": "xy"
+      },
+      {
+        "index": 649,
+        "expected": "xz"
+      },
+      {
+        "index": 650,
+        "expected": "ya"
+      },
+      {
+        "index": 651,
+        "expected": "yb"
+      },
+      {
+        "index": 652,
+        "expected": "yc"
+      },
+      {
+        "index": 653,
+        "expected": "yd"
+      },
+      {
+        "index": 654,
+        "expected": "ye"
+      },
+      {
+        "index": 655,
+        "expected": "yf"
+      },
+      {
+        "index": 656,
+        "expected": "yg"
+      },
+      {
+        "index": 657,
+        "expected": "yh"
+      },
+      {
+        "index": 658,
+        "expected": "yi"
+      },
+      {
+        "index": 659,
+        "expected": "yj"
+      },
+      {
+        "index": 660,
+        "expected": "yk"
+      },
+      {
+        "index": 661,
+        "expected": "yl"
+      },
+      {
+        "index": 662,
+        "expected": "ym"
+      },
+      {
+        "index": 663,
+        "expected": "yn"
+      },
+      {
+        "index": 664,
+        "expected": "yo"
+      },
+      {
+        "index": 665,
+        "expected": "yp"
+      },
+      {
+        "index": 666,
+        "expected": "yq"
+      },
+      {
+        "index": 667,
+        "expected": "yr"
+      },
+      {
+        "index": 668,
+        "expected": "ys"
+      },
+      {
+        "index": 669,
+        "expected": "yt"
+      },
+      {
+        "index": 670,
+        "expected": "yu"
+      },
+      {
+        "index": 671,
+        "expected": "yv"
+      },
+      {
+        "index": 672,
+        "expected": "yw"
+      },
+      {
+        "index": 673,
+        "expected": "yx"
+      },
+      {
+        "index": 674,
+        "expected": "yy"
+      },
+      {
+        "index": 675,
+        "expected": "yz"
+      },
+      {
+        "index": 676,
+        "expected": "za"
+      },
+      {
+        "index": 677,
+        "expected": "zb"
+      },
+      {
+        "index": 678,
+        "expected": "zc"
+      },
+      {
+        "index": 679,
+        "expected": "zd"
+      },
+      {
+        "index": 680,
+        "expected": "ze"
+      },
+      {
+        "index": 681,
+        "expected": "zf"
+      },
+      {
+        "index": 682,
+        "expected": "zg"
+      },
+      {
+        "index": 683,
+        "expected": "zh"
+      },
+      {
+        "index": 684,
+        "expected": "zi"
+      },
+      {
+        "index": 685,
+        "expected": "zj"
+      },
+      {
+        "index": 686,
+        "expected": "zk"
+      },
+      {
+        "index": 687,
+        "expected": "zl"
+      },
+      {
+        "index": 688,
+        "expected": "zm"
+      },
+      {
+        "index": 689,
+        "expected": "zn"
+      },
+      {
+        "index": 690,
+        "expected": "zo"
+      },
+      {
+        "index": 691,
+        "expected": "zp"
+      },
+      {
+        "index": 692,
+        "expected": "zq"
+      },
+      {
+        "index": 693,
+        "expected": "zr"
+      },
+      {
+        "index": 694,
+        "expected": "zs"
+      },
+      {
+        "index": 695,
+        "expected": "zt"
+      },
+      {
+        "index": 696,
+        "expected": "zu"
+      },
+      {
+        "index": 697,
+        "expected": "zv"
+      },
+      {
+        "index": 698,
+        "expected": "zw"
+      },
+      {
+        "index": 699,
+        "expected": "zx"
+      },
+      {
+        "index": 700,
+        "expected": "zy"
+      },
+      {
+        "index": 701,
+        "expected": "zz"
+      },
+      {
+        "index": 702,
+        "expected": "aaa"
+      }
+    ],
+    "answer_label_cases_provenance": {
+      "source_sha256": "c2b9ff9719e5ca4b7c837a22da5eae6a3bd2811d9eb17ef6895a730c038f1541",
+      "method": "Execute only isolated letters_for and indices_para_letras AST definitions; no module import, GUI, network, or installer.",
+      "functions": [
+        {
+          "function": "letters_for",
+          "line": 952,
+          "source_offset": "0x7c98",
+          "native_address": null
+        },
+        {
+          "function": "indices_para_letras",
+          "line": 1518,
+          "source_offset": "0xd0f7",
+          "native_address": null
+        }
+      ],
+      "fixture": "checks/deep-answer-label-oracle.json"
+    }
   }
 }
