@@ -26,9 +26,11 @@ Crie questões calculadas, organize seu banco e gere provas e gabaritos individu
 
 ## Instalar
 
-A versão **0.4.5** é distribuída em MSI e ZIP **sem assinatura digital**, mantendo a distribuição da versão anterior. O Windows pode mostrar **Autor desconhecido**. Os arquivos SHA-256 permitem conferir a integridade dos downloads. Veja os detalhes em [SIGNING.md](SIGNING.md).
+A versão **0.4.6** é distribuída em MSI e ZIP **sem assinatura digital**, mantendo a distribuição da versão anterior. O Windows pode mostrar **Autor desconhecido**. Os arquivos SHA-256 permitem conferir a integridade dos downloads. Veja os detalhes em [SIGNING.md](SIGNING.md).
 
-Baixe o [instalador MSI do Test Craft 0.4.5](https://github.com/jorgewattes/test-craft/releases/download/v0.4.5/test-craft-0.4.5-windows-x64.msi), execute o instalador e abra **Test Craft** pelo menu Iniciar. Requer Windows 10/11 de 64 bits e suporte a OpenGL.
+Baixe o [instalador MSI do Test Craft 0.4.6](https://github.com/jorgewattes/test-craft/releases/download/v0.4.6/test-craft-0.4.6-windows-x64.msi), execute o instalador e abra **Test Craft** pelo menu Iniciar. Requer Windows 10/11 de 64 bits e suporte a OpenGL.
+
+A partir da versão 0.4.6, o programa verifica releases ao iniciar, recupera configurações antigas com repositório vazio e tenta novamente após falhas de conexão. Uma versão nova aparece na janela **Nova versão disponível**; clique em **Baixar e instalar** para concluir. A instalação precisa dessa confirmação e da autorização do Windows quando solicitada. A verificação pode ser desativada em **Sobre e atualizações**.
 
 A partir da versão 0.4.2, abra **Sobre e atualizações**, verifique a versão e clique em **Baixar e instalar**. O aplicativo baixa e confere o SHA-256, solicita autorização administrativa pelo Windows e fecha para instalar; ao concluir, abra-o novamente. Os dados ficam em **%LOCALAPPDATA%\Test Craft\data** e são preservados na atualização e desinstalação. Feche o aplicativo antes de copiar essa pasta para fazer backup.
 
@@ -74,7 +76,7 @@ Se o login expirar, abra novamente o atalho. Não envie senhas ou tokens pelo ch
 
 No Craft Anything, o perfil **Codex Caderno GitHub** usa o executor do Craft (`build_command_run`) com seu usuário habitual do Windows. Se o terminal isolado informar **CodexSandboxOffline**, o Codex deve repetir a verificação por esse executor antes de solicitar um novo login. Se o executor estiver indisponível, abra o Codex ou o PowerShell com seu usuário habitual do Windows.
 
-O projeto fica em **C:\dev\moodtest2\app**, branch **main**, versão **0.4.5**, no repositório **jorgewattes/test-craft**. A publicação por tag gera MSI, ZIP e SHA-256 no GitHub Actions; só está concluída quando o workflow terminar e os quatro arquivos estiverem disponíveis na Release. A validação ICE do MSI é obrigatória no workflow.
+O projeto fica em **C:\dev\moodtest2\app**, branch **main**, versão local **0.4.6** (ainda não publicada), no repositório **jorgewattes/test-craft**. A publicação por tag gera MSI, ZIP e SHA-256 no GitHub Actions; só está concluída quando o workflow terminar e os quatro arquivos estiverem disponíveis na Release. A validação ICE do MSI é obrigatória no workflow.
 
 Com Rust e Visual Studio Build Tools instalados:
 
@@ -84,6 +86,6 @@ cargo build --locked
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-release.ps1
 ```
 
-O script gera MSI, ZIP, SHA-256, relatório de assinatura e as notas da versão em **dist/**. A configuração `unsignedReleaseVersion: "0.4.5"` em **release-config.json** autoriza somente essa versão sem certificado, inclusive no GitHub Actions. Outras versões exigem assinatura por padrão; a preparação local sem certificado precisa de `-AllowUnsigned`. Configure a assinatura conforme [SIGNING.md](SIGNING.md). Tags `vX.Y.Z` correspondentes à versão do Cargo.toml publicam os pacotes com as notas da versão atual e validação ICE obrigatória do instalador.
+O script gera MSI, ZIP, SHA-256, relatório de assinatura e as notas da versão em **dist/**. A configuração `unsignedReleaseVersion: "0.4.6"` em **release-config.json** autoriza somente essa versão sem certificado, inclusive no GitHub Actions. Outras versões exigem assinatura por padrão; a preparação local sem certificado precisa de `-AllowUnsigned`. Configure a assinatura conforme [SIGNING.md](SIGNING.md). Tags `vX.Y.Z` correspondentes à versão do Cargo.toml publicam os pacotes com as notas da versão atual e validação ICE obrigatória do instalador.
 
 Licença [MIT](LICENSE). Dependências e créditos em [CREDITS.md](CREDITS.md).

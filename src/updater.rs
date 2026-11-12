@@ -6,6 +6,7 @@ use std::{
 };
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 const INTERVAL: Duration = Duration::from_secs(6 * 60 * 60);
+const RETRY_INTERVAL: Duration = Duration::from_secs(60);
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
@@ -114,46 +115,130 @@ fn parse_release(bytes: &[u8], repo: &str, current: &str) -> Result<Option<Relea
         package,
     }))
 }
+fn query(url: &str, extra: &[&str]) -> Result<Vec<u8>, String> {
+    let output = hidden_command(curl_path().as_os_str())
+        .args([
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--location",
+            "--proto",
+            "=https",
+            "--proto-redir",
+            "=https",
+            "--tlsv1.2",
+            "--connect-timeout",
+            "8",
+            "--max-time",
+            "20",
+            "--max-filesize",
+            "2097152",
+            "--user-agent",
+            concat!("TestCraft/", env!("CARGO_PKG_VERSION")),
+            "--header",
+            "Cache-Control: no-cache",
+        ])
+        .args(extra)
+        .arg(url)
+        .output()
+        .map_err(|_| {
+            "Não foi possível iniciar a consulta de atualizações do Windows.".to_string()
+        })?;
+    if !output.status.success() {
+        return Err(
+            "Não foi possível consultar releases. Confira a conexão e tente novamente.".into(),
+        );
+    }
+    Ok(output.stdout)
+}
+fn public_tag(url: &[u8], repo: &str) -> Result<String, String> {
+    let prefix = format!("https://github.com/{repo}/releases/tag/");
+    let tag = std::str::from_utf8(url)
+        .ok()
+        .and_then(|s| s.trim().strip_prefix(&prefix))
+        .filter(|tag| version(tag).is_some())
+        .ok_or("O GitHub não retornou uma release estável deste repositório.")?;
+    Ok(tag.into())
+}
+fn parse_public_release(
+    html: &[u8],
+    repo: &str,
+    tag: &str,
+    current: &str,
+) -> Result<Option<Release>, String> {
+    let repo = repository(repo)?;
+    let latest = version(tag).ok_or("Versão publicada inválida.")?;
+    if latest <= version(current).ok_or("Versão instalada inválida.")? {
+        return Ok(None);
+    }
+    let html = std::str::from_utf8(html).map_err(|_| "Lista de pacotes inválida.")?;
+    let number = tag.trim_start_matches('v');
+    let mut assets = Vec::new();
+    for extension in ["msi", "msi.sha256", "zip", "zip.sha256"] {
+        let name = format!("test-craft-{number}-windows-x64.{extension}");
+        let relative = format!("/{repo}/releases/download/{tag}/{name}");
+        if ![
+            format!("href=\"{relative}\""),
+            format!("href=\"https://github.com{relative}\""),
+        ]
+        .iter()
+        .any(|link| html.contains(link))
+        {
+            return Err(format!(
+                "A versão {number} existe, mas seus pacotes e checksums ainda não estão completos."
+            ));
+        }
+        assets.push(serde_json::json!({"name": name, "state":"uploaded"}));
+    }
+    let payload = serde_json::to_vec(&serde_json::json!({"tag_name":tag,"assets":assets}))
+        .map_err(|e| e.to_string())?;
+    parse_release(&payload, &repo, current)
+}
+fn fetch_public(repo: &str) -> Result<Option<Release>, String> {
+    // The public release pages keep working when the unauthenticated API is rate-limited.
+    let url = query(
+        &format!("https://github.com/{repo}/releases/latest"),
+        &[
+            "--head",
+            "--output",
+            "NUL",
+            "--write-out",
+            "%{url_effective}",
+        ],
+    )?;
+    let tag = public_tag(&url, repo)?;
+    if version(&tag) <= version(VERSION) {
+        return Ok(None);
+    }
+    let html = query(
+        &format!("https://github.com/{repo}/releases/expanded_assets/{tag}"),
+        &[],
+    )?;
+    parse_public_release(&html, repo, &tag, VERSION)
+}
 fn fetch(repo: &str) -> Result<Option<Release>, String> {
     let repo = repository(repo)?;
-    let mut command = std::process::Command::new("curl.exe");
-    command.args([
-        "--fail",
-        "--silent",
-        "--show-error",
-        "--proto",
-        "=https",
-        "--tlsv1.2",
-        "--connect-timeout",
-        "8",
-        "--max-time",
-        "20",
-        "--max-filesize",
-        "2097152",
-        "--user-agent",
-        concat!("TestCraft/", env!("CARGO_PKG_VERSION")),
-        "--header",
-        "Accept: application/vnd.github+json",
-        "--header",
-        "X-GitHub-Api-Version: 2022-11-28",
+    match query(
         &format!("https://api.github.com/repos/{repo}/releases/latest"),
-    ]);
-    #[cfg(windows)]
+        &[
+            "--header",
+            "Accept: application/vnd.github+json",
+            "--header",
+            "X-GitHub-Api-Version: 2022-11-28",
+        ],
+    )
+    .and_then(|bytes| parse_release(&bytes, &repo, VERSION))
     {
-        use std::os::windows::process::CommandExt;
-        command.creation_flags(0x08000000);
+        Ok(release) => Ok(release),
+        Err(_) => fetch_public(&repo),
     }
-    let output = command.output().map_err(|_| "Não foi possível consultar atualizações. Verifique se curl.exe está disponível no Windows.".to_string())?;
-    if !output.status.success() {
-        return Err("Não foi possível consultar releases. Confira a conexão, o repositório público e se há uma release publicada. Tente novamente mais tarde.".into());
-    }
-    parse_release(&output.stdout, &repo, VERSION)
 }
 pub struct Updater {
     pub settings: Settings,
     pub message: String,
     pub available: Option<Release>,
     pub offer: bool,
+    pub check_failed: bool,
     receiver: Option<mpsc::Receiver<Result<Option<Release>, String>>>,
     last_check: Option<Instant>,
     install_receiver: Option<mpsc::Receiver<Result<(), String>>>,
@@ -161,15 +246,21 @@ pub struct Updater {
 }
 impl Updater {
     pub fn load(data: &Path) -> Self {
-        let settings = std::fs::read(data.join("atualizacoes.json"))
+        let mut settings: Settings = std::fs::read(data.join("atualizacoes.json"))
             .ok()
             .and_then(|b| serde_json::from_slice(&b).ok())
             .unwrap_or_default();
+        // Older versions saved an empty repository before GitHub was configured.
+        // Recover the bundled repository while preserving the automatic-check choice.
+        if settings.repository.trim().is_empty() {
+            settings.repository = Settings::default().repository;
+        }
         Self {
             settings,
-            message: "Configure o repositório para receber atualizações.".into(),
+            message: "As atualizações são verificadas ao abrir o Test Craft.".into(),
             available: None,
             offer: false,
+            check_failed: false,
             receiver: None,
             last_check: None,
             install_receiver: None,
@@ -188,6 +279,7 @@ impl Updater {
         self.available = None;
         self.offer = false;
         self.last_check = None;
+        self.check_failed = false;
         self.message = "Preferências de atualização salvas.".into();
         Ok(())
     }
@@ -210,7 +302,8 @@ impl Updater {
         };
         self.available = None;
         self.offer = false;
-        self.message = "Verificando releases…".into();
+        self.check_failed = false;
+        self.message = "Verificando atualizações…".into();
         self.last_check = Some(Instant::now());
         let (tx, rx) = mpsc::channel();
         self.receiver = Some(rx);
@@ -263,6 +356,8 @@ impl Updater {
             match rx.try_recv() {
                 Ok(result) => {
                     self.receiver = None;
+                    self.last_check = Some(Instant::now());
+                    self.check_failed = false;
                     match result {
                         Ok(Some(r)) => {
                             self.message = format!("A versão {} está disponível.", r.version);
@@ -275,28 +370,48 @@ impl Updater {
                             self.offer = false;
                         }
                         Err(e) => {
+                            self.check_failed = true;
                             self.message = e;
                         }
                     }
                 }
                 Err(mpsc::TryRecvError::Disconnected) => {
                     self.receiver = None;
+                    self.check_failed = true;
                     self.message = "A consulta foi interrompida. Tente novamente.".into();
                 }
                 Err(mpsc::TryRecvError::Empty) => {}
             }
+            ctx.request_repaint_after(Duration::from_millis(200));
         }
         if self.settings.automatic && !self.settings.repository.trim().is_empty() {
-            if self
-                .last_check
-                .map(|t| t.elapsed() >= INTERVAL)
-                .unwrap_or(true)
-            {
+            if self.check_due() {
                 self.check(ctx);
             }
             ctx.request_repaint_after(Duration::from_secs(30));
         }
     }
+    fn check_due(&self) -> bool {
+        self.settings.automatic
+            && !self.settings.repository.trim().is_empty()
+            && !self.busy()
+            && self
+                .last_check
+                .map(|t| {
+                    t.elapsed()
+                        >= if self.check_failed {
+                            RETRY_INTERVAL
+                        } else {
+                            INTERVAL
+                        }
+                })
+                .unwrap_or(true)
+    }
+}
+
+fn curl_path() -> std::path::PathBuf {
+    std::path::PathBuf::from(std::env::var_os("SystemRoot").unwrap_or_else(|| r"C:/Windows".into()))
+        .join("System32/curl.exe")
 }
 
 fn hidden_command(exe: &std::ffi::OsStr) -> std::process::Command {
@@ -339,10 +454,7 @@ fn download_and_launch(release: &Release) -> Result<(), String> {
     ));
     std::fs::create_dir(&folder).map_err(|e| e.to_string())?;
     let package = folder.join(&name);
-    let curl = std::path::PathBuf::from(
-        std::env::var_os("SystemRoot").unwrap_or_else(|| r"C:\Windows".into()),
-    )
-    .join("System32/curl.exe");
+    let curl = curl_path();
     let fetch = |url: &str, path: &Path, limit: &str| -> Result<(), String> {
         let result = hidden_command(curl.as_os_str())
             .args([
@@ -414,6 +526,112 @@ mod tests {
     use super::*;
     fn payload(tag: &str) -> Vec<u8> {
         serde_json::to_vec(&serde_json::json!({"tag_name":tag,"assets":[{"name":format!("test-craft-{}-windows-x64.zip",tag.trim_start_matches('v')),"state":"uploaded"}]})).unwrap()
+    }
+
+    #[test]
+    fn recovers_legacy_empty_repository_without_overriding_opt_out() {
+        let folder =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("checks/update-legacy-settings-test");
+        std::fs::create_dir_all(&folder).unwrap();
+        for automatic in [true, false] {
+            std::fs::write(
+                folder.join("atualizacoes.json"),
+                serde_json::to_vec(&serde_json::json!({"repository":"  ","automatic":automatic}))
+                    .unwrap(),
+            )
+            .unwrap();
+            let updater = Updater::load(&folder);
+            assert_eq!(updater.settings.repository, Settings::default().repository);
+            assert_eq!(updater.settings.automatic, automatic);
+            assert_eq!(updater.check_due(), automatic);
+        }
+    }
+    #[test]
+    fn checks_on_startup_and_retries_failures_without_waiting_six_hours() {
+        let folder = Path::new(env!("CARGO_MANIFEST_DIR")).join("checks/update-schedule-test");
+        let mut updater = Updater::load(&folder);
+        assert!(updater.check_due());
+        updater.last_check = Some(Instant::now());
+        assert!(!updater.check_due());
+        updater.last_check = Some(Instant::now() - Duration::from_secs(90));
+        assert!(!updater.check_due());
+        updater.check_failed = true;
+        assert!(updater.check_due());
+        let (_tx, rx) = mpsc::channel();
+        updater.receiver = Some(rx);
+        assert!(!updater.check_due());
+        updater.receiver = None;
+        updater.settings.automatic = false;
+        assert!(!updater.check_due());
+    }
+
+    #[test]
+    fn public_fallback_detects_updates_and_requires_packages_with_checksums() {
+        let repo = "escola/test-craft";
+        let tag = public_tag(
+            b"https://github.com/escola/test-craft/releases/tag/v1.2.0\n",
+            repo,
+        )
+        .unwrap();
+        let html: String = ["msi", "msi.sha256", "zip", "zip.sha256"].iter()
+            .map(|ext| format!("<a href=\"/{repo}/releases/download/{tag}/test-craft-1.2.0-windows-x64.{ext}\">Download</a>"))
+            .collect();
+        let release = parse_public_release(html.as_bytes(), repo, &tag, "1.1.0")
+            .unwrap()
+            .unwrap();
+        assert_eq!(release.version, "1.2.0");
+        assert_eq!(
+            release.url,
+            "https://github.com/escola/test-craft/releases/download/v1.2.0"
+        );
+        assert!(parse_public_release(html.as_bytes(), repo, &tag, "1.2.0")
+            .unwrap()
+            .is_none());
+        assert!(parse_public_release(
+            html.replace(".zip.sha256", ".zip.missing").as_bytes(),
+            repo,
+            &tag,
+            "1.1.0"
+        )
+        .is_err());
+        for url in [
+            "https://evil.com/escola/test-craft/releases/tag/v1.2.0",
+            "https://github.com/other/repo/releases/tag/v1.2.0",
+            "https://github.com/escola/test-craft/releases/tag/v1.2.0-beta",
+            "https://github.com/escola/test-craft/releases/tag/v1.2.0/extra",
+        ] {
+            assert!(public_tag(url.as_bytes(), repo).is_err());
+        }
+    }
+
+    #[test]
+    #[ignore = "Requires public GitHub connectivity"]
+    fn public_github_release_check() {
+        let repo = Settings::default().repository;
+        let url = query(
+            &format!("https://github.com/{repo}/releases/latest"),
+            &[
+                "--head",
+                "--output",
+                "NUL",
+                "--write-out",
+                "%{url_effective}",
+            ],
+        )
+        .unwrap();
+        let tag = public_tag(&url, &repo).unwrap();
+        let html = query(
+            &format!("https://github.com/{repo}/releases/expanded_assets/{tag}"),
+            &[],
+        )
+        .unwrap();
+        let release = parse_public_release(&html, &repo, &tag, "0.0.0")
+            .unwrap()
+            .unwrap();
+        println!(
+            "Public GitHub fallback OK: {} with MSI, ZIP and SHA-256 files",
+            release.version
+        );
     }
     #[test]
     fn refuses_wrong_or_malformed_checksums() {
@@ -537,6 +755,14 @@ mod tests {
         tx.send(Err("Sem conexão".into())).unwrap();
         updater.tick(&context);
         assert_eq!(updater.message, "Sem conexão");
+        assert!(updater.check_failed);
+        assert!(!updater.check_due());
+        let (tx, rx) = mpsc::channel();
+        updater.receiver = Some(rx);
+        tx.send(Ok(None)).unwrap();
+        updater.tick(&context);
+        assert!(!updater.check_failed);
+        assert!(updater.available.is_none());
         assert!(!updater.busy());
     }
 }

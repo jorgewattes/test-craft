@@ -1,3 +1,12 @@
+# Test Craft 0.4.6
+
+- Botão Rascunho amarelo somente quando selecionado; mudanças de status passam a marcar a edição como pendente de salvar.
+- Formulário de criação de prova ocupa a largura disponível, com categorias mais largas e prévia abaixo dos campos.
+- Consulta alternativa às páginas públicas de releases quando a API do GitHub retorna erro, exigindo MSI, ZIP e os dois checksums antes de oferecer a atualização.
+- Atualizador recupera repositório vazio de configurações antigas, usa o curl do Windows e acompanha a consulta sem depender de interação na janela.
+- Falhas de conexão ficam visíveis e geram nova tentativa após um minuto, respeitando a preferência por verificações automáticas.
+- Publicação de MSI e ZIP sem assinatura digital, com SHA-256 e validação ICE, mantendo a distribuição anterior.
+
 # Test Craft 0.4.5
 
 - Mais espaço e respiro para as questões por categoria na criação de prova.

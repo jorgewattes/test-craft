@@ -1244,7 +1244,10 @@ impl App {
                         field(ui,"Título da questão",&mut self.draft.title);
                         ui.horizontal(|ui| {
                             small(ui,"Status da questão");
-                            if ui.add(egui::Button::new("Rascunho").fill(DRAFT_BG).stroke(Stroke::new(1f32,DRAFT_LINE)).selected(self.draft.status==QuestionStatus::Draft)).clicked(){self.draft.status=QuestionStatus::Draft;}
+                            let selected=self.draft.status==QuestionStatus::Draft;
+                            let button=egui::Button::new("Rascunho").selected(selected);
+                            let button=if selected{button.fill(DRAFT_BG).stroke(Stroke::new(1f32,DRAFT_LINE))}else{button};
+                            if ui.add(button).clicked(){self.draft.status=QuestionStatus::Draft;}
                             ui.selectable_value(&mut self.draft.status,QuestionStatus::Ready,"Pronta");
                         });
                         small(ui,"Somente questões prontas e sem erros participam das provas.");
@@ -1264,7 +1267,7 @@ impl App {
                         });
                         let mut remove=None;for (i,p) in self.draft.pictures.iter().enumerate(){ui.horizontal(|ui|{small(ui,&p.name);if ui.button("Remover").clicked(){remove=Some(i)}});}
                         if let Some(i)=remove{self.draft.pictures.remove(i);self.dirty=true;self.validation=None; self.validation_example=None;}
-                        if before.title!=self.draft.title||before.category!=self.draft.category||before.text!=self.draft.text{self.dirty=true;self.validation=None; self.validation_example=None;}
+                        if before.status!=self.draft.status||before.title!=self.draft.title||before.category!=self.draft.category||before.text!=self.draft.text{self.dirty=true;self.validation=None; self.validation_example=None;}
                     });
                     ui.add_space(12.);
                     card().show(ui,|ui|{
@@ -1389,13 +1392,11 @@ impl App {
         });
         ui.add_space(20.);
         let w = ui.available_width();
-        let side = (w * 0.26).clamp(230., 300.);
         let content_height = ui.available_height();
         let mut changed = false;
         let previous_plan = self.setup.plan.clone();
-        ui.horizontal_top(|ui|{
-            ui.allocate_ui_with_layout(Vec2::new(w-side-22.,content_height),egui::Layout::top_down(egui::Align::Min),|ui|{
-                egui::ScrollArea::vertical().id_salt("exam_setup").show(ui,|ui|{
+        egui::ScrollArea::vertical().id_salt("exam_setup").auto_shrink([false,false]).show(ui,|ui|{
+                ui.set_width(w - ui.spacing().scroll.bar_width - ui.spacing().scroll.bar_inner_margin);
                     card().show(ui,|ui|{
                         ui.label(R::new("1   Dados da prova").size(16.).strong());ui.add_space(10.);
                         let old=(self.setup.title.clone(),self.setup.institution.clone(),self.setup.teacher.clone(),self.setup.class_name.clone(),self.setup.date.clone());
@@ -1432,16 +1433,17 @@ impl App {
                             self.proof_category_focus = true;
                         }
                         let len=self.setup.plan.len();let mut mv=None;let mut remove=None;
+                        egui::ScrollArea::vertical().id_salt("selected_categories").auto_shrink([false,true]).max_height((content_height*0.52).max(320.)).show(ui,|ui|{
                         let category_width=(ui.available_width()-255.).max(120.);
-                        egui::ScrollArea::vertical().id_salt("selected_categories").max_height((content_height*0.52).max(320.)).show(ui,|ui|{
                         ui.scope(|ui| { ui.spacing_mut().interact_size.y=28.; ui.spacing_mut().button_padding=Vec2::new(6.,4.);
                         egui::Grid::new("category_plan").spacing([10.,12.]).show(ui,|ui|{
                             for s in ["Categoria","Disponíveis","Sortear","","",""]{small(ui,s)}ui.end_row();
                             for (i,(cat,n)) in self.setup.plan.iter_mut().enumerate(){
                                 let count=self.index.ready_counts.get(cat).copied().unwrap_or(0);
                                 ui.allocate_ui_with_layout(Vec2::new(category_width,40.),egui::Layout::top_down(egui::Align::Min),|ui|{
-                                    ui.label(R::new(cat.rsplit('/').next().unwrap_or(cat)).strong()).on_hover_text(cat.replace('/'," / "));
-                                    if let Some((parent,_))=cat.rsplit_once('/'){small(ui,parent.replace('/'," / "));}
+                                    ui.set_width(category_width);
+                                    ui.add(egui::Label::new(R::new(cat.rsplit('/').next().unwrap_or(cat)).strong()).wrap()).on_hover_text(cat.replace('/'," / "));
+                                    if let Some((parent,_))=cat.rsplit_once('/'){ui.add(egui::Label::new(R::new(parent.replace('/'," / ")).size(12.).color(MUTED)).wrap());}
                                 });small(ui,count.to_string());let limit=if self.pending_validation.is_empty(){count}else{count.max(*n)};changed|=ui.add_enabled(self.pending_validation.is_empty(),egui::DragValue::new(n).range(0..=limit)).changed();
                                 if position_button(ui,true,i>0,"Adiantar categoria").clicked(){mv=Some((i,i-1))}
                                 if position_button(ui,false,i+1<len,"Postergar categoria").clicked(){mv=Some((i,i+1))}
@@ -1465,11 +1467,7 @@ impl App {
                         ui.horizontal(|ui|{small(ui,"Identificador do sorteio");changed|=ui.add(egui::DragValue::new(&mut self.setup.seed).range(0..=999_999_999u64)).changed();if ui.button("Novo").clicked(){self.setup.seed=now()%999_999_999;changed=true;}});
                         small(ui,"O mesmo banco, lista e identificador reproduzem as mesmas provas.");
                     });
-                });
-            });
-            ui.add_space(10.);
-            ui.allocate_ui_with_layout(Vec2::new(side,content_height),egui::Layout::top_down(egui::Align::Min),|ui|{
-                egui::ScrollArea::vertical().id_salt("exam_preview").show(ui,|ui|{
+                    ui.add_space(12.);
                     card().show(ui,|ui|{
                         ui.label(R::new("Prévia em PDF").size(18.).strong());
                         ui.add_space(10.);
@@ -1488,8 +1486,6 @@ impl App {
                         ui.label(R::new("O que será salvo").strong().color(TEAL));
                         small(ui,"• Todas as provas em um PDF\n• Gabarito consolidado em PDF");
                     });
-                });
-            });
         });
         if self.setup.plan != previous_plan {
             self.setup.question_order.clear();
@@ -1639,7 +1635,7 @@ impl App {
                 let busy = self.updater.busy();
                 ui.add_enabled_ui(!busy, |ui| {
                     field(ui, "Repositório ou link de releases", &mut self.update_repository);
-                    ui.checkbox(&mut self.update_automatic, "Verificar automaticamente");
+                    ui.checkbox(&mut self.update_automatic, "Verificar ao iniciar e periodicamente");
                     if primary(ui, "Salvar preferências").clicked() {
                         if let Err(e) = self.updater.save(&self.data, &self.update_repository, self.update_automatic) { self.updater.message = e; }
                     }
@@ -2241,6 +2237,14 @@ impl eframe::App for App {
                             TEAL
                         },
                     );
+                    if self.updater.check_failed {
+                        if ui.small_button("Atualizações: verificar conexão").on_hover_text(&self.updater.message).clicked() { self.navigate(4); }
+                    } else if self.updater.busy() {
+                        ui.spinner();
+                        small(ui, &self.updater.message);
+                    } else if let Some(release) = &self.updater.available {
+                        if ui.small_button(format!("Instalar versão {}", release.version)).clicked() { self.navigate(4); }
+                    }
                     ui.label(R::new(&self.status).size(11.).color(if self.status_error {
                         C::from_rgb(173, 78, 48)
                     } else {
