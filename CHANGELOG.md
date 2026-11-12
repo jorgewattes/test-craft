@@ -1,3 +1,9 @@
+# Em desenvolvimento
+
+- Classificação de questões como Exemplo, Fácil, Média, Difícil ou Desafio, com etiquetas no banco e na prévia e filtro combinado com busca, categoria e situação.
+- Níveis disponíveis aparecem automaticamente no seletor de categorias da prova; o sorteio respeita o nível escolhido, inclusive nas subcategorias, e evita seleções sobrepostas.
+- Classificação preservada no banco SQLite e na exportação JSON; questões antigas continuam sem classificação.
+
 # Test Craft 0.4.6
 
 - Botão Rascunho amarelo somente quando selecionado; mudanças de status passam a marcar a edição como pendente de salvar.

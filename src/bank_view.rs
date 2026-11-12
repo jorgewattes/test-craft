@@ -1,6 +1,6 @@
 use crate::model::{
-    categories, category_matches, validate_with_example, Bank, Question, QuestionStatus,
-    ValidationExample,
+    categories, category_matches, proof_pool_key, proof_pool_parts, validate_with_example, Bank, Question, QuestionDifficulty,
+    QuestionStatus, ValidationExample,
 };
 use std::{
     collections::BTreeMap,
@@ -67,14 +67,39 @@ impl QuestionFilter {
     }
 }
 
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub enum DifficultyFilter {
+    #[default]
+    All,
+    Unclassified,
+    Level(QuestionDifficulty),
+}
+impl DifficultyFilter {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::All => "Todos os níveis",
+            Self::Unclassified => "Sem classificação",
+            Self::Level(level) => level.label(),
+        }
+    }
+    fn matches(self, question: &Question) -> bool {
+        match self {
+            Self::All => true,
+            Self::Unclassified => question.difficulty.is_none(),
+            Self::Level(level) => question.difficulty == Some(level),
+        }
+    }
+}
+
 /// Lightweight lookup/search data; never clone images or rebuild text on repaint.
 pub struct BankIndex {
     pub positions: BTreeMap<u64, usize>,
     pub categories: Vec<String>,
     pub category_counts: BTreeMap<String, usize>,
     pub ready_counts: BTreeMap<String, usize>,
+    pub ready_pool_counts: BTreeMap<String, usize>,
     search: Vec<String>,
-    filter: Option<(String, String, QuestionFilter)>,
+    filter: Option<(String, String, QuestionFilter, DifficultyFilter)>,
     matches: Arc<Vec<usize>>,
 }
 impl BankIndex {
@@ -82,6 +107,7 @@ impl BankIndex {
         Self {
             category_counts: category_counts(bank),
             ready_counts: BTreeMap::new(),
+            ready_pool_counts: BTreeMap::new(),
             positions: bank
                 .questions
                 .iter()
@@ -102,15 +128,16 @@ impl BankIndex {
         self.filter = None;
     }
     pub fn available_by_category(&self, plan: &[(String, usize)]) -> BTreeMap<String, usize> {
-        let added: std::collections::BTreeSet<_> = plan.iter().map(|(path, _)| path).collect();
         let mut counts = BTreeMap::new();
-        for (path, count) in &self.ready_counts {
-            if added.contains(path) {
+        for (pool, count) in &self.ready_pool_counts {
+            let (category, level) = proof_pool_parts(pool);
+            if plan.iter().any(|(key, _)| key == category || key == pool) {
                 continue;
             }
-            let mut path = path.as_str();
+            let mut path = category;
             loop {
                 *counts.entry(path.to_owned()).or_default() += count;
+                *counts.entry(proof_pool_key(path, level.unwrap())).or_default() += count;
                 match path.rsplit_once('/') {
                     Some((parent, _)) => path = parent,
                     None => break,
@@ -119,17 +146,38 @@ impl BankIndex {
         }
         counts
     }
+    pub fn record_ready(&mut self, question: &Question) {
+        *self.ready_counts.entry(question.category.clone()).or_default() += 1;
+        *self.ready_pool_counts.entry(proof_pool_key(&question.category, question.difficulty)).or_default() += 1;
+    }
+    pub fn plan_count(&self, key: &str) -> usize {
+        if proof_pool_parts(key).1.is_some() {
+            self.ready_pool_counts.get(key).copied().unwrap_or(0)
+        } else {
+            self.ready_counts.get(key).copied().unwrap_or(0)
+        }
+    }
     /// Expand a parent into disjoint direct-category pools. Existing plan rows
     /// keep their quantities and no question can be sampled twice via a parent.
     pub fn add_category_tree(&self, root: &str, plan: &mut Vec<(String, usize)>) {
-        let mut added: std::collections::BTreeSet<_> =
-            plan.iter().map(|(path, _)| path.clone()).collect();
+        let (root, level) = proof_pool_parts(root);
         for path in &self.categories {
             if category_matches(path, root)
                 && self.ready_counts.get(path).copied().unwrap_or(0) > 0
-                && added.insert(path.clone())
+                && !plan.iter().any(|(key, _)| key == path)
             {
-                plan.push((path.clone(), 1));
+                let partial = plan.iter().any(|(key, _)| proof_pool_parts(key).0 == path);
+                if level.is_none() && !partial {
+                    plan.push((path.clone(), 1));
+                } else {
+                    for (pool, count) in &self.ready_pool_counts {
+                        let (category, difficulty) = proof_pool_parts(pool);
+                        if category == path && *count > 0 && (level.is_none() || level == difficulty)
+                            && !plan.iter().any(|(key, _)| key == pool) {
+                            plan.push((pool.clone(), 1));
+                        }
+                    }
+                }
             }
         }
     }
@@ -139,10 +187,16 @@ impl BankIndex {
         category: &str,
         search: &str,
         status: QuestionFilter,
+        difficulty: DifficultyFilter,
         errors: &BTreeMap<u64, String>,
         pending: &std::collections::BTreeSet<u64>,
     ) -> (Arc<Vec<usize>>, bool) {
-        let key = (category.to_owned(), search.trim().to_lowercase(), status);
+        let key = (
+            category.to_owned(),
+            search.trim().to_lowercase(),
+            status,
+            difficulty,
+        );
         let changed = self.filter.as_ref() != Some(&key);
         if changed {
             self.matches = Arc::new(
@@ -152,6 +206,7 @@ impl BankIndex {
                     .filter(|(i, q)| {
                         (category == "Todas" || category_matches(&q.category, category))
                             && self.search[*i].contains(&key.1)
+                            && difficulty.matches(q)
                             && match status {
                                 QuestionFilter::All => true,
                                 QuestionFilter::Draft => q.status == QuestionStatus::Draft,
@@ -249,6 +304,190 @@ impl Validator {
 mod tests {
     use super::*;
     #[test]
+    fn level_selection_expands_descendants_without_overlapping_existing_rows() {
+        use crate::model::{generate_with_mode, proof_pool_matches, QuestionDifficulty::*};
+        let template = crate::model::examples().questions.remove(0);
+        let mut bank = Bank { version: 1, questions: vec![], category_labels: vec![] };
+        for (i, (category, level)) in [
+            ("Física", Some(Easy)),
+            ("Física/Óptica", Some(Easy)),
+            ("Física/Óptica", Some(Hard)),
+            ("Física/Óptica", None),
+            ("Física/Óptica/Lentes", Some(Easy)),
+            ("Química", Some(Easy)),
+        ].into_iter().enumerate() {
+            let mut q = template.clone();
+            q.id = i as u64 + 1;
+            q.title = format!("Questão {i}");
+            q.category = category.into();
+            q.difficulty = level;
+            bank.questions.push(q);
+        }
+        let mut index = BankIndex::new(&bank);
+        for q in &bank.questions { index.record_ready(q); }
+        let easy = proof_pool_key("Física", Some(Easy));
+        assert_eq!(index.available_by_category(&[])[&easy], 3);
+        let mut plan = vec![];
+        index.add_category_tree(&easy, &mut plan);
+        assert_eq!(plan.len(), 3);
+        assert!(plan.iter().all(|(key, _)| index.plan_count(key) == 1));
+        let unchanged = plan.clone();
+        index.add_category_tree(&easy, &mut plan);
+        assert_eq!(plan, unchanged);
+        assert!(!index.available_by_category(&plan).contains_key(&easy));
+        assert_eq!(index.available_by_category(&plan)["Física"], 2);
+        for mode in [false, true] {
+            for seed in 0..8 {
+                let batch = generate_with_mode(&bank, &plan, "Ana\nBia", seed, "Prova", "", "", "", "", mode).unwrap();
+                for student in batch.students {
+                    assert_eq!(student.questions.len(), 3);
+                    for question in student.questions {
+                        let original = bank.questions.iter().find(|q| q.title == question.title).unwrap();
+                        assert_eq!(original.difficulty, Some(Easy));
+                        assert!(category_matches(&original.category, "Física"));
+                    }
+                }
+            }
+        }
+        // Adding the whole category after one level adds only the other levels.
+        index.add_category_tree("Física", &mut plan);
+        assert_eq!(plan.len(), 5);
+        for q in bank.questions.iter().filter(|q| category_matches(&q.category, "Física")) {
+            assert_eq!(plan.iter().filter(|(key, _)| proof_pool_matches(key, q)).count(), 1);
+        }
+        assert!(index.available_by_category(&plan).get("Física").is_none());
+    }
+
+    #[test]
+    fn difficulty_filter_combines_with_status_search_and_category_and_updates_cache() {
+        let mut bank = crate::model::examples();
+        let template = bank.questions[0].clone();
+        bank.questions = QuestionDifficulty::ALL
+            .into_iter()
+            .enumerate()
+            .map(|(i, level)| {
+                let mut q = template.clone();
+                q.id = i as u64;
+                q.difficulty = Some(level);
+                q
+            })
+            .collect();
+        let mut unclassified = template.clone();
+        unclassified.id = 10;
+        bank.questions.push(unclassified);
+        let errors = BTreeMap::from([(2, "Revisar".into())]);
+        let pending = Default::default();
+        let mut index = BankIndex::new(&bank);
+        for (i, level) in QuestionDifficulty::ALL.into_iter().enumerate() {
+            let (matches, changed) = index.filter(
+                &bank,
+                "Todas",
+                "",
+                QuestionFilter::All,
+                DifficultyFilter::Level(level),
+                &errors,
+                &pending,
+            );
+            assert!(changed);
+            assert_eq!(*matches, vec![i]);
+        }
+        assert_eq!(
+            *index
+                .filter(
+                    &bank,
+                    "Todas",
+                    "",
+                    QuestionFilter::All,
+                    DifficultyFilter::Unclassified,
+                    &errors,
+                    &pending
+                )
+                .0,
+            vec![5]
+        );
+        assert_eq!(
+            index
+                .filter(
+                    &bank,
+                    "Todas",
+                    "",
+                    QuestionFilter::All,
+                    DifficultyFilter::All,
+                    &errors,
+                    &pending
+                )
+                .0
+                .len(),
+            6
+        );
+        assert_eq!(
+            *index
+                .filter(
+                    &bank,
+                    &template.category,
+                    &template.title,
+                    QuestionFilter::Error,
+                    DifficultyFilter::Level(QuestionDifficulty::Medium),
+                    &errors,
+                    &pending
+                )
+                .0,
+            vec![2]
+        );
+        assert!(index
+            .filter(
+                &bank,
+                "Todas",
+                "",
+                QuestionFilter::Ready,
+                DifficultyFilter::Level(QuestionDifficulty::Medium),
+                &errors,
+                &pending
+            )
+            .0
+            .is_empty());
+        assert!(index
+            .filter(
+                &bank,
+                "Ausente",
+                "",
+                QuestionFilter::All,
+                DifficultyFilter::Level(QuestionDifficulty::Medium),
+                &errors,
+                &pending
+            )
+            .0
+            .is_empty());
+        assert!(index
+            .filter(
+                &bank,
+                "Todas",
+                "sem correspondência",
+                QuestionFilter::All,
+                DifficultyFilter::Level(QuestionDifficulty::Medium),
+                &errors,
+                &pending
+            )
+            .0
+            .is_empty());
+        bank.questions[2].difficulty = Some(QuestionDifficulty::Hard);
+        index = BankIndex::new(&bank);
+        assert_eq!(
+            *index
+                .filter(
+                    &bank,
+                    "Todas",
+                    "",
+                    QuestionFilter::All,
+                    DifficultyFilter::Level(QuestionDifficulty::Hard),
+                    &errors,
+                    &pending
+                )
+                .0,
+            vec![2, 3]
+        );
+    }
+    #[test]
     fn cached_search_matches_legacy_filters_and_rebuilds_after_changes() {
         let mut bank = crate::model::examples();
         bank.questions[0].category = "Física/Óptica".into();
@@ -260,6 +499,7 @@ mod tests {
                     category,
                     search,
                     QuestionFilter::All,
+                    DifficultyFilter::All,
                     &BTreeMap::new(),
                     &Default::default(),
                 );
@@ -281,6 +521,7 @@ mod tests {
                     category,
                     search,
                     QuestionFilter::All,
+                    DifficultyFilter::All,
                     &BTreeMap::new(),
                     &Default::default(),
                 );
@@ -296,6 +537,7 @@ mod tests {
                 "Física",
                 "",
                 QuestionFilter::All,
+                DifficultyFilter::All,
                 &BTreeMap::new(),
                 &Default::default()
             )
@@ -312,18 +554,42 @@ mod tests {
         let mut pending = std::collections::BTreeSet::from([bank.questions[0].id]);
         let mut index = BankIndex::new(&bank);
         assert!(index
-            .filter(&bank, "Todas", "", QuestionFilter::Ready, &errors, &pending)
+            .filter(
+                &bank,
+                "Todas",
+                "",
+                QuestionFilter::Ready,
+                DifficultyFilter::All,
+                &errors,
+                &pending
+            )
             .0
             .is_empty());
         assert_eq!(
             *index
-                .filter(&bank, "Todas", "", QuestionFilter::Draft, &errors, &pending)
+                .filter(
+                    &bank,
+                    "Todas",
+                    "",
+                    QuestionFilter::Draft,
+                    DifficultyFilter::All,
+                    &errors,
+                    &pending
+                )
                 .0,
             vec![1]
         );
         assert_eq!(
             *index
-                .filter(&bank, "Todas", "", QuestionFilter::Error, &errors, &pending)
+                .filter(
+                    &bank,
+                    "Todas",
+                    "",
+                    QuestionFilter::Error,
+                    DifficultyFilter::All,
+                    &errors,
+                    &pending
+                )
                 .0,
             vec![2]
         );
@@ -333,6 +599,7 @@ mod tests {
                 "Ausente",
                 "",
                 QuestionFilter::Error,
+                DifficultyFilter::All,
                 &errors,
                 &pending
             )
@@ -344,6 +611,7 @@ mod tests {
                 "Todas",
                 "não existe",
                 QuestionFilter::Draft,
+                DifficultyFilter::All,
                 &errors,
                 &pending
             )
@@ -353,14 +621,30 @@ mod tests {
         index.invalidate_filter();
         assert_eq!(
             *index
-                .filter(&bank, "Todas", "", QuestionFilter::Ready, &errors, &pending)
+                .filter(
+                    &bank,
+                    "Todas",
+                    "",
+                    QuestionFilter::Ready,
+                    DifficultyFilter::All,
+                    &errors,
+                    &pending
+                )
                 .0,
             vec![0]
         );
         errors.clear();
         index.invalidate_filter();
         assert!(index
-            .filter(&bank, "Todas", "", QuestionFilter::Error, &errors, &pending)
+            .filter(
+                &bank,
+                "Todas",
+                "",
+                QuestionFilter::Error,
+                DifficultyFilter::All,
+                &errors,
+                &pending
+            )
             .0
             .is_empty());
     }

@@ -11,6 +11,7 @@ pub(crate) fn proof_category_picker(
     let mut selected = None;
     let mut close = false;
     let available = index.available_by_category(plan);
+    let totals = index.available_by_category(&[]);
     let response = egui::Modal::new(egui::Id::new("proof_category_picker")).show(ctx, |ui| {
         ui.set_width(460.0_f32.min(ctx.screen_rect().width() - 70.));
         ui.heading("Adicionar categoria à prova");
@@ -22,16 +23,16 @@ pub(crate) fn proof_category_picker(
             input.request_focus();
             *focus = false;
         }
-        small(ui, "Expanda uma categoria para escolher suas subcategorias. O número indica as questões prontas disponíveis.");
+        small(ui, "Expanda uma categoria para escolher suas subcategorias ou níveis. Só aparecem níveis com questões prontas.");
         if validating { small(ui, "Validando questões; as quantidades serão atualizadas."); }
         ui.add_space(8.);
         egui::ScrollArea::vertical().id_salt("proof_category_results")
             .max_height((ctx.screen_rect().height() - 250.).clamp(100., 440.))
             .show(ui, |ui| {
-                if !index.categories.iter().any(|cat| bank_view::category_search_matches(cat, search)) {
+                if !index.categories.iter().any(|cat| proof_search_matches(cat, &totals, search)) {
                     small(ui, "Nenhuma categoria encontrada. Ajuste a busca ou crie uma categoria no banco.");
                 } else {
-                    category_tree(ui, "", &index.categories, &available, search, &mut selected);
+                    category_tree(ui, "", &index.categories, &available, &totals, search, &mut selected);
                 }
             });
         close = ui.button("Fechar").clicked();
@@ -39,11 +40,24 @@ pub(crate) fn proof_category_picker(
     (selected, close || response.should_close())
 }
 
+fn proof_search_matches(category: &str, totals: &BTreeMap<String, usize>, search: &str) -> bool {
+    bank_view::category_search_matches(category, search)
+        || proof_levels().any(|level| {
+            let key = proof_pool_key(category, level);
+            totals.get(&key).copied().unwrap_or(0) > 0
+                && bank_view::category_search_matches(&proof_pool_label(&key), search)
+        })
+}
+fn proof_levels() -> impl Iterator<Item = Option<QuestionDifficulty>> {
+    QuestionDifficulty::ALL.into_iter().map(Some).chain(std::iter::once(None))
+}
+
 fn category_tree(
     ui: &mut egui::Ui,
     parent: &str,
     categories: &[String],
     available: &BTreeMap<String, usize>,
+    totals: &BTreeMap<String, usize>,
     search: &str,
     selected: &mut Option<String>,
 ) {
@@ -53,7 +67,7 @@ fn category_tree(
     {
         if !categories
             .iter()
-            .any(|p| category_matches(p, cat) && bank_view::category_search_matches(p, search))
+            .any(|p| category_matches(p, cat) && proof_search_matches(p, totals, search))
         {
             continue;
         }
@@ -62,13 +76,20 @@ fn category_tree(
         let children = categories
             .iter()
             .any(|p| p.rsplit_once('/').is_some_and(|(p, _)| p == cat));
-        if children {
+        let levels: Vec<_> = proof_levels().filter(|level| totals.get(&proof_pool_key(cat, *level)).copied().unwrap_or(0) > 0).collect();
+        if children || !levels.is_empty() {
             egui::CollapsingHeader::new(R::new(format!("{leaf}   ·   {count}")).strong())
                 .id_salt(("proof_tree", cat, search))
                 .default_open(!search.trim().is_empty())
                 .show(ui, |ui| {
                     category_add_row(ui, cat, "Todas desta categoria", count, selected);
-                    category_tree(ui, cat, categories, available, search, selected);
+                    for level in &levels {
+                        let key = proof_pool_key(cat, *level);
+                        if bank_view::category_search_matches(&proof_pool_label(&key), search) {
+                            category_add_row(ui, &key, level.map_or("Sem classificação", QuestionDifficulty::label), available.get(&key).copied().unwrap_or(0), selected);
+                        }
+                    }
+                    category_tree(ui, cat, categories, available, totals, search, selected);
                 });
         } else {
             category_add_row(ui, cat, leaf, count, selected);
@@ -90,7 +111,7 @@ fn category_add_row(
                     .wrap()
                     .min_size(Vec2::new((ui.available_width() - 75.).max(120.), 36.)),
             );
-            if response.on_hover_text(path.replace('/', " / ")).clicked() {
+            if response.on_hover_text(proof_pool_label(path).replace('/', " / ")).clicked() {
                 *selected = Some(path.into());
             }
             small(
@@ -108,6 +129,22 @@ fn category_add_row(
 #[cfg(test)]
 mod picker_tests {
     use super::*;
+
+    #[test]
+    fn search_finds_only_existing_ready_levels_with_accent_insensitive_labels() {
+        let mut bank = examples();
+        bank.questions.truncate(1);
+        bank.questions[0].category = "Física/Óptica".into();
+        bank.questions[0].difficulty = Some(QuestionDifficulty::Easy);
+        let mut index = bank_view::BankIndex::new(&bank);
+        assert!(!proof_search_matches("Física/Óptica", &index.available_by_category(&[]), "facil"));
+        index.record_ready(&bank.questions[0]);
+        let totals = index.available_by_category(&[]);
+        assert!(proof_search_matches("Física/Óptica", &totals, "optica facil"));
+        assert!(proof_search_matches("Física", &totals, "facil"));
+        assert!(!proof_search_matches("Física/Óptica", &totals, "dificil"));
+        assert!(!proof_search_matches("Física/Óptica", &totals, "sem classificacao"));
+    }
 
     #[test]
     fn proof_category_search_keeps_focus_and_open_state_while_typing() {

@@ -96,6 +96,52 @@ fn secondary(ui: &mut egui::Ui, s: &str) -> egui::Response {
             .min_size(Vec2::new(92., 38.)),
     )
 }
+fn draft_selectable_value<Value: PartialEq>(
+    ui: &mut egui::Ui,
+    current: &mut Value,
+    value: Value,
+    label: &str,
+) -> egui::Response {
+    ui.scope(|ui| {
+        let visuals = ui.visuals_mut();
+        visuals.selection.bg_fill = DRAFT_BG;
+        visuals.selection.stroke = Stroke::new(1f32, C::from_rgb(139, 105, 20));
+        visuals.widgets.hovered.weak_bg_fill = DRAFT_BG;
+        visuals.widgets.hovered.bg_stroke = Stroke::new(1f32, DRAFT_LINE);
+        visuals.widgets.active.weak_bg_fill = DRAFT_BG;
+        visuals.widgets.active.bg_stroke = Stroke::new(1f32, DRAFT_LINE);
+        ui.selectable_value(current, value, label)
+    }).inner
+}
+fn error_selectable_value<Value: PartialEq>(
+    ui: &mut egui::Ui,
+    current: &mut Value,
+    value: Value,
+    label: &str,
+) -> egui::Response {
+    ui.scope(|ui| {
+        let visuals = ui.visuals_mut();
+        let fill = C::from_rgb(255, 232, 232);
+        visuals.selection.bg_fill = fill;
+        visuals.selection.stroke = Stroke::new(1f32, ERROR);
+        visuals.widgets.hovered.weak_bg_fill = fill;
+        visuals.widgets.hovered.bg_stroke = Stroke::new(1f32, ERROR);
+        visuals.widgets.active.weak_bg_fill = fill;
+        visuals.widgets.active.bg_stroke = Stroke::new(1f32, ERROR);
+        ui.selectable_value(current, value, label)
+    }).inner
+}
+fn difficulty_tag(ui: &mut egui::Ui, difficulty: Option<QuestionDifficulty>) {
+    let (label, color, bg) = match difficulty {
+        Some(QuestionDifficulty::Example) => ("Exemplo", C::from_rgb(77, 104, 148), C::from_rgb(235, 242, 252)),
+        Some(QuestionDifficulty::Easy) => ("Fácil", TEAL, PALE),
+        Some(QuestionDifficulty::Medium) => ("Média", C::from_rgb(139, 105, 20), DRAFT_BG),
+        Some(QuestionDifficulty::Hard) => ("Difícil", C::from_rgb(167, 84, 28), C::from_rgb(255, 239, 225)),
+        Some(QuestionDifficulty::Challenge) => ("Desafio", C::from_rgb(121, 69, 157), C::from_rgb(244, 233, 252)),
+        None => ("Sem classificação", MUTED, BG),
+    };
+    tag(ui, label, color, bg);
+}
 fn field(ui: &mut egui::Ui, label: &str, value: &mut String) {
     small(ui, label);
     ui.add(
@@ -438,6 +484,7 @@ struct App {
     search: String,
     category: String,
     question_filter: bank_view::QuestionFilter,
+    difficulty_filter: bank_view::DifficultyFilter,
     selected: Option<u64>,
     preview_seed: u64,
     draft: Question,
@@ -576,6 +623,7 @@ impl App {
             search: String::new(),
             category: "Todas".into(),
             question_filter: bank_view::QuestionFilter::All,
+            difficulty_filter: bank_view::DifficultyFilter::All,
             preview_seed: 17,
             edit_id: None,
             validation: None,
@@ -667,7 +715,7 @@ impl App {
     fn sync_plan(&mut self) {
         let cats = self.index.categories.clone();
         let previous = self.setup.plan.clone();
-        self.setup.plan.retain(|(c, _)| cats.contains(c));
+        self.setup.plan.retain(|(c, _)| cats.iter().any(|cat| cat == proof_pool_parts(c).0));
         self.setup.plan.retain(|(_, n)| *n > 0);
         if self.setup.plan != previous {
             self.setup.question_order.clear();
@@ -1003,11 +1051,26 @@ impl App {
                     small(ui, "Situação");
                     for status in [bank_view::QuestionFilter::All, bank_view::QuestionFilter::Ready, bank_view::QuestionFilter::Error, bank_view::QuestionFilter::Draft] {
                         if status == bank_view::QuestionFilter::Draft {
-                            if ui.add(egui::Button::new(status.label()).fill(DRAFT_BG).stroke(Stroke::new(1f32,DRAFT_LINE)).selected(self.question_filter == status)).clicked() { self.question_filter = status; }
+                            draft_selectable_value(ui, &mut self.question_filter, status, status.label());
+                        } else if status == bank_view::QuestionFilter::Error {
+                            error_selectable_value(ui, &mut self.question_filter, status, status.label());
                         } else { ui.selectable_value(&mut self.question_filter, status, status.label()); }
                     }
                 });
-                let (filtered, filter_changed) = self.index.filter(&self.bank, &self.category, &self.search, self.question_filter, &self.bank_errors, &self.pending_validation);
+                ui.horizontal_wrapped(|ui| {
+                    small(ui, "Classificação");
+                    egui::ComboBox::from_id_salt("bank_difficulty")
+                        .selected_text(self.difficulty_filter.label())
+                        .show_ui(ui, |ui| {
+                            use bank_view::DifficultyFilter;
+                            ui.selectable_value(&mut self.difficulty_filter, DifficultyFilter::All, DifficultyFilter::All.label());
+                            ui.selectable_value(&mut self.difficulty_filter, DifficultyFilter::Unclassified, DifficultyFilter::Unclassified.label());
+                            for level in QuestionDifficulty::ALL {
+                                ui.selectable_value(&mut self.difficulty_filter, DifficultyFilter::Level(level), level.label());
+                            }
+                        });
+                });
+                let (filtered, filter_changed) = self.index.filter(&self.bank, &self.category, &self.search, self.question_filter, self.difficulty_filter, &self.bank_errors, &self.pending_validation);
                 if filter_changed { self.list_page = 0; }
                 ui.horizontal(|ui|{small(ui,format!("{} questões encontradas",filtered.len()));});
                 self.selection_toolbar(ui, &filtered);
@@ -1043,6 +1106,7 @@ impl App {
                                     let status = if error.is_some() {"Com erro · Revisar"} else if q.status==QuestionStatus::Draft {"Rascunho"} else if self.pending_validation.contains(&q.id) {"Validando…"} else {"Pronta"};
                                     let summary=format!("{} · {status}",q.category);
                                     ui.label(R::new(summary).size(12.).color(if error.is_some(){ERROR}else{MUTED})).on_hover_text(error.as_deref().unwrap_or("Abra para conferir a questão"));
+                                    difficulty_tag(ui, q.difficulty);
                                 });
                                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center),|ui|{ui.label(R::new("›").size(23.).color(if selected{TEAL}else{MUTED}));});
                             });
@@ -1061,7 +1125,7 @@ impl App {
                     let error=self.bank_errors.get(&q.id).cloned();
                     card().stroke(Stroke::new(if error.is_some(){2f32}else{1f32},if error.is_some(){ERROR}else{LINE})).show(ui,|ui|{
                         ui.set_width(right-42.);
-                        ui.horizontal(|ui|{small(ui,"PRÉVIA DA QUESTÃO");ui.with_layout(egui::Layout::right_to_left(egui::Align::Center),|ui|tag(ui,"Exemplo",TEAL,PALE));});
+                        ui.horizontal_wrapped(|ui|{small(ui,"PRÉVIA DA QUESTÃO");difficulty_tag(ui, q.difficulty);});
                         if ui.button("Ampliar prévia").clicked(){self.expanded_preview=true;}
                         ui.add_space(12.);ui.label(R::new(&q.title).size(20.).strong());
                         small(ui,&q.category);rule(ui);
@@ -1244,13 +1308,22 @@ impl App {
                         field(ui,"Título da questão",&mut self.draft.title);
                         ui.horizontal(|ui| {
                             small(ui,"Status da questão");
-                            let selected=self.draft.status==QuestionStatus::Draft;
-                            let button=egui::Button::new("Rascunho").selected(selected);
-                            let button=if selected{button.fill(DRAFT_BG).stroke(Stroke::new(1f32,DRAFT_LINE))}else{button};
-                            if ui.add(button).clicked(){self.draft.status=QuestionStatus::Draft;}
+                            draft_selectable_value(ui,&mut self.draft.status,QuestionStatus::Draft,"Rascunho");
                             ui.selectable_value(&mut self.draft.status,QuestionStatus::Ready,"Pronta");
                         });
                         small(ui,"Somente questões prontas e sem erros participam das provas.");
+                        ui.horizontal_wrapped(|ui| {
+                            small(ui,"Classificação");
+                            egui::ComboBox::from_id_salt("editor_difficulty")
+                                .selected_text(self.draft.difficulty.map_or("Sem classificação", QuestionDifficulty::label))
+                                .show_ui(ui, |ui| {
+                                    ui.selectable_value(&mut self.draft.difficulty, None, "Sem classificação");
+                                    for level in QuestionDifficulty::ALL {
+                                        ui.selectable_value(&mut self.draft.difficulty, Some(level), level.label());
+                                    }
+                                });
+                        });
+                        ui.add_space(9.);
                         small(ui,"Categoria / assunto");
                         ui.horizontal(|ui| {
                             ui.allocate_ui_with_layout(Vec2::new((ui.available_width()-47.).max(100.),38.),egui::Layout::top_down(egui::Align::Min),|ui| {
@@ -1267,7 +1340,7 @@ impl App {
                         });
                         let mut remove=None;for (i,p) in self.draft.pictures.iter().enumerate(){ui.horizontal(|ui|{small(ui,&p.name);if ui.button("Remover").clicked(){remove=Some(i)}});}
                         if let Some(i)=remove{self.draft.pictures.remove(i);self.dirty=true;self.validation=None; self.validation_example=None;}
-                        if before.status!=self.draft.status||before.title!=self.draft.title||before.category!=self.draft.category||before.text!=self.draft.text{self.dirty=true;self.validation=None; self.validation_example=None;}
+                        if before.status!=self.draft.status||before.difficulty!=self.draft.difficulty||before.title!=self.draft.title||before.category!=self.draft.category||before.text!=self.draft.text{self.dirty=true;self.validation=None; self.validation_example=None;}
                     });
                     ui.add_space(12.);
                     card().show(ui,|ui|{
@@ -1392,7 +1465,6 @@ impl App {
         });
         ui.add_space(20.);
         let w = ui.available_width();
-        let content_height = ui.available_height();
         let mut changed = false;
         let previous_plan = self.setup.plan.clone();
         egui::ScrollArea::vertical().id_salt("exam_setup").auto_shrink([false,false]).show(ui,|ui|{
@@ -1415,6 +1487,9 @@ impl App {
                         });
                         changed|=old!=(self.setup.title.clone(),self.setup.institution.clone(),self.setup.teacher.clone(),self.setup.class_name.clone(),self.setup.date.clone());
                     });ui.add_space(12.);
+                    let category_panel_width = ui.available_width().min(820.);
+                    ui.allocate_ui_with_layout(Vec2::new(category_panel_width,0.),egui::Layout::top_down(egui::Align::Min),|ui|{
+                    ui.set_width(category_panel_width);
                     card().show(ui,|ui|{
                         ui.label(R::new("2   Questões por categoria").size(16.).strong());
                         ui.horizontal_wrapped(|ui| {
@@ -1433,17 +1508,22 @@ impl App {
                             self.proof_category_focus = true;
                         }
                         let len=self.setup.plan.len();let mut mv=None;let mut remove=None;
-                        egui::ScrollArea::vertical().id_salt("selected_categories").auto_shrink([false,true]).max_height((content_height*0.52).max(320.)).show(ui,|ui|{
+                        ui.scope(|ui| {
+                        ui.spacing_mut().scroll = egui::style::ScrollStyle::solid();
+                        ui.spacing_mut().scroll.bar_width = 10.;
+                        egui::ScrollArea::vertical().id_salt("selected_categories").auto_shrink([false,true]).min_scrolled_height(320.).max_height(320.)
+                        .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::VisibleWhenNeeded).show(ui,|ui|{
                         let category_width=(ui.available_width()-255.).max(120.);
                         ui.scope(|ui| { ui.spacing_mut().interact_size.y=28.; ui.spacing_mut().button_padding=Vec2::new(6.,4.);
                         egui::Grid::new("category_plan").spacing([10.,12.]).show(ui,|ui|{
                             for s in ["Categoria","Disponíveis","Sortear","","",""]{small(ui,s)}ui.end_row();
                             for (i,(cat,n)) in self.setup.plan.iter_mut().enumerate(){
-                                let count=self.index.ready_counts.get(cat).copied().unwrap_or(0);
+                                let count=self.index.plan_count(cat);
+                                let display=proof_pool_label(cat);
                                 ui.allocate_ui_with_layout(Vec2::new(category_width,40.),egui::Layout::top_down(egui::Align::Min),|ui|{
                                     ui.set_width(category_width);
-                                    ui.add(egui::Label::new(R::new(cat.rsplit('/').next().unwrap_or(cat)).strong()).wrap()).on_hover_text(cat.replace('/'," / "));
-                                    if let Some((parent,_))=cat.rsplit_once('/'){ui.add(egui::Label::new(R::new(parent.replace('/'," / ")).size(12.).color(MUTED)).wrap());}
+                                    ui.add(egui::Label::new(R::new(display.rsplit('/').next().unwrap_or(&display)).strong()).wrap()).on_hover_text(display.replace('/'," / "));
+                                    if let Some((parent,_))=display.rsplit_once('/'){ui.add(egui::Label::new(R::new(parent.replace('/'," / ")).size(12.).color(MUTED)).wrap());}
                                 });small(ui,count.to_string());let limit=if self.pending_validation.is_empty(){count}else{count.max(*n)};changed|=ui.add_enabled(self.pending_validation.is_empty(),egui::DragValue::new(n).range(0..=limit)).changed();
                                 if position_button(ui,true,i>0,"Adiantar categoria").clicked(){mv=Some((i,i-1))}
                                 if position_button(ui,false,i+1<len,"Postergar categoria").clicked(){mv=Some((i,i+1))}
@@ -1452,10 +1532,12 @@ impl App {
                             }
                         });
                         }); });
+                        });
                         if let Some((a,b))=mv{self.setup.plan.swap(a,b);changed=true;}
                         if let Some(i)=remove{self.setup.plan.remove(i);changed=true;}
                         if self.setup.plan.is_empty(){small(ui,"Adicione as categorias ou subcategorias que serão usadas nesta prova.");}
                         rule(ui);ui.label(R::new(format!("{} questões por aluno",self.setup.plan.iter().map(|p|p.1).sum::<usize>())).strong().color(TEAL));
+                    });
                     });ui.add_space(12.);
                     card().show(ui,|ui|{
                         ui.label(R::new("3   Alunos").size(16.).strong());
@@ -1953,7 +2035,7 @@ impl App {
                                 if self.persist(&old) {
                                     if let Some(source) = &self.category_edit {
                                         self.draft.category = renamed_path(&self.draft.category, source, &path);
-                                        for (category, _) in &mut self.setup.plan { *category = renamed_path(category, source, &path); }
+                                        for (category, _) in &mut self.setup.plan { *category = renamed_proof_pool(category, source, &path); }
                                     }
                                     self.sync_plan();
                                     if self.category_for_editor {
@@ -2133,11 +2215,7 @@ impl eframe::App for App {
                     if let Some(&position) = self.index.positions.get(&result.id) {
                         let q = &self.bank.questions[position];
                         if q.status == QuestionStatus::Ready {
-                            *self
-                                .index
-                                .ready_counts
-                                .entry(q.category.clone())
-                                .or_default() += 1;
+                            self.index.record_ready(q);
                         }
                     }
                 }

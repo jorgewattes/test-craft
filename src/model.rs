@@ -101,6 +101,61 @@ impl Default for QuestionStatus {
         Self::Ready
     }
 }
+#[derive(Clone, Copy, Serialize, Deserialize, Debug, PartialEq, Eq)]
+pub enum QuestionDifficulty {
+    Example,
+    Easy,
+    Medium,
+    Hard,
+    Challenge,
+}
+impl QuestionDifficulty {
+    pub const ALL: [Self; 5] = [
+        Self::Example,
+        Self::Easy,
+        Self::Medium,
+        Self::Hard,
+        Self::Challenge,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Example => "Exemplo",
+            Self::Easy => "Fácil",
+            Self::Medium => "Média",
+            Self::Hard => "Difícil",
+            Self::Challenge => "Desafio",
+        }
+    }
+}
+// Plan keys keep existing category-only plans readable. Level pools are virtual:
+// they never create or rename categories in the question bank.
+pub fn proof_pool_key(category: &str, difficulty: Option<QuestionDifficulty>) -> String {
+    format!("{category}\0{}", difficulty.map_or("Sem classificação", QuestionDifficulty::label))
+}
+pub fn proof_pool_parts(key: &str) -> (&str, Option<Option<QuestionDifficulty>>) {
+    if let Some((category, level)) = key.rsplit_once('\0') {
+        if level == "Sem classificação" {
+            return (category, Some(None));
+        }
+        if let Some(level) = QuestionDifficulty::ALL.into_iter().find(|d| d.label() == level) {
+            return (category, Some(Some(level)));
+        }
+    }
+    (key, None)
+}
+pub fn proof_pool_label(key: &str) -> String {
+    key.replace('\0', "/")
+}
+pub fn proof_pool_matches(key: &str, question: &Question) -> bool {
+    let (category, difficulty) = proof_pool_parts(key);
+    question.category == category && difficulty.is_none_or(|d| question.difficulty == d)
+}
+pub fn renamed_proof_pool(key: &str, source: &str, destination: &str) -> String {
+    let (category, difficulty) = proof_pool_parts(key);
+    let category = renamed_path(category, source, destination);
+    difficulty.map_or_else(|| category.clone(), |level| proof_pool_key(&category, level))
+}
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 pub struct Question {
     pub id: u64,
@@ -108,6 +163,8 @@ pub struct Question {
     pub category: String,
     #[serde(default)]
     pub status: QuestionStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub difficulty: Option<QuestionDifficulty>,
     pub text: String,
     #[serde(default)]
     pub pictures: Vec<Picture>,
@@ -1175,15 +1232,19 @@ pub fn generate_with_mode(
         let qs: Vec<_> = bank
             .questions
             .iter()
-            .filter(|q| *n > 0 && &q.category == cat && eligible(q))
+            .filter(|q| *n > 0 && proof_pool_matches(cat, q) && eligible(q))
             .collect();
         if *n > qs.len() {
             return Err(format!(
-                "{cat}: há {} questões prontas e válidas, mas foram pedidas {n}.",
-                qs.len()
+                "{}: há {} questões prontas e válidas, mas foram pedidas {n}.",
+                proof_pool_label(cat), qs.len()
             ));
         }
         pools.insert(cat, qs);
+    }
+    let mut pool_ids = BTreeSet::new();
+    if pools.values().flatten().any(|q| !pool_ids.insert(q.id)) {
+        return Err("Há categorias ou níveis sobrepostos no plano da prova. Remova a seleção repetida.".into());
     }
     let mut rng = StdRng::seed_from_u64(seed);
     let mut students = vec![];
@@ -1374,6 +1435,7 @@ pub fn examples() -> Bank {
     ) -> Question {
         Question {
             status: QuestionStatus::Ready,
+            difficulty: None,
             import_issues: vec![],
             source_xml: None,
             id,
@@ -1863,6 +1925,7 @@ pub fn import_xml(path: &Path) -> Result<Bank, String> {
             .collect::<Result<Vec<_>, String>>()?;
         let q = Question {
             status: QuestionStatus::Ready,
+            difficulty: None,
             id: questions.len() as u64 + 1,
             title: n.nested("name"),
             // carregar_questoes (0xc549), category branch at 0xc680:
@@ -1892,6 +1955,29 @@ pub fn import_xml(path: &Path) -> Result<Bank, String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn difficulty_plans_persist_rename_and_reject_overlapping_or_insufficient_pools() {
+        let mut bank = examples();
+        for q in &mut bank.questions { q.difficulty = Some(QuestionDifficulty::Easy); }
+        let category = bank.questions[0].category.clone();
+        let key = proof_pool_key(&category, Some(QuestionDifficulty::Easy));
+        let plan = vec![(key.clone(), 1)];
+        let batch = generate_with_mode(&bank, &plan, "Ana", 42, "Prova", "", "", "", "", true).unwrap();
+        let reopened: Batch = serde_json::from_str(&serde_json::to_string(&batch).unwrap()).unwrap();
+        assert_eq!(reopened.plan, plan);
+        assert_eq!(renamed_proof_pool(&key, &category, "Nova/Sub"), proof_pool_key("Nova/Sub", Some(QuestionDifficulty::Easy)));
+        assert_eq!(renamed_proof_pool(&category, &category, "Nova"), "Nova");
+        assert_eq!(proof_pool_label(&key), format!("{category}/Fácil"));
+        let overlap = vec![(category.clone(), 1), (key, 1)];
+        for mode in [false, true] {
+            assert!(generate_with_mode(&bank, &overlap, "Ana", 42, "Prova", "", "", "", "", mode).err().unwrap().contains("sobrepostos"));
+            let missing = vec![(proof_pool_key(&category, Some(QuestionDifficulty::Hard)), 1)];
+            let error = generate_with_mode(&bank, &missing, "Ana", 42, "Prova", "", "", "", "", mode).err().unwrap();
+            assert!(error.contains("Difícil"));
+            assert!(!error.contains('\0'));
+        }
+    }
+
     #[test]
     fn random_multiplier_is_bounded_shared_and_reproducible() {
         let mut q = examples().questions.remove(0);

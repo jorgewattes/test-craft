@@ -261,10 +261,7 @@ mod tests {
         assert!(result.error.is_none());
         let question = &bank.questions[index.positions[&result.id]];
         assert_eq!(question.status, QuestionStatus::Ready);
-        *index
-            .ready_counts
-            .entry(question.category.clone())
-            .or_default() += 1;
+        index.record_ready(question);
         assert_eq!(index.category_counts["Importadas"], 1);
         assert_eq!(index.available_by_category(&[])["Importadas"], 1);
         assert!(!index.available_by_category(&[]).contains_key("Importada"));

@@ -4,6 +4,8 @@ Em **Criar prova**, cole os alunos na grade: textos com tabulações viram colun
 
 # Test Craft
 
+Em **Criar prova**, o seletor de categorias mostra automaticamente os níveis com questões prontas e válidas: **Exemplo**, **Fácil**, **Média**, **Difícil**, **Desafio** e **Sem classificação**. Escolher um nível inclui apenas questões dessa classificação, inclusive nas subcategorias. Os níveis são opções da prova e não alteram as categorias do banco. Selecione **Todas desta categoria** para incluir os demais níveis; os já escolhidos não são duplicados.
+
 Configure categorias pelo botão de ícone ao lado do filtro. A janela permite criar, renomear, reorganizar e excluir categorias, transferindo suas questões para outro destino.
 
 O banco mostra os totais em uma linha compacta. Combine categoria e busca com os filtros **Todas**, **Prontas**, **Com erro** e **Rascunhos**. Questões com validação pendente não aparecem como prontas nem com erro até a conferência terminar; rascunhos com problemas também aparecem em **Com erro**. Em **Criar prova**, o botão **Adicionar categoria ou subcategoria** abre uma janela de busca que aceita palavras sem acentos e mantém o foco durante a digitação.
@@ -76,7 +78,7 @@ Se o login expirar, abra novamente o atalho. Não envie senhas ou tokens pelo ch
 
 No Craft Anything, o perfil **Codex Caderno GitHub** usa o executor do Craft (`build_command_run`) com seu usuário habitual do Windows. Se o terminal isolado informar **CodexSandboxOffline**, o Codex deve repetir a verificação por esse executor antes de solicitar um novo login. Se o executor estiver indisponível, abra o Codex ou o PowerShell com seu usuário habitual do Windows.
 
-O projeto fica em **C:\dev\moodtest2\app**, branch **main**, versão local **0.4.6** (ainda não publicada), no repositório **jorgewattes/test-craft**. A publicação por tag gera MSI, ZIP e SHA-256 no GitHub Actions; só está concluída quando o workflow terminar e os quatro arquivos estiverem disponíveis na Release. A validação ICE do MSI é obrigatória no workflow.
+O projeto fica em **C:\dev\moodtest2\app**, branch **main**, no repositório **jorgewattes/test-craft**. A versão **0.4.6** já foi publicada com MSI, ZIP e SHA-256; os dados da publicação estão em **release-verification.json**. As melhorias posteriores na branch **main** estão descritas em **Em desenvolvimento** no CHANGELOG e ainda não fazem parte do instalador 0.4.6. A publicação por tag gera os pacotes no GitHub Actions; só está concluída quando o workflow terminar e os quatro arquivos estiverem disponíveis na Release. A validação ICE do MSI é obrigatória no workflow.
 
 Com Rust e Visual Studio Build Tools instalados:
 

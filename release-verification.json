@@ -1,0 +1,39 @@
+{
+  "repository": "jorgewattes/test-craft",
+  "tag": "v0.4.6",
+  "commit": "1c03ecda4b7613a20c3a1d259f24ae5a0ca1b8d6",
+  "release_url": "https://github.com/jorgewattes/test-craft/releases/tag/v0.4.6",
+  "published_at": "2026-11-12T05:37:22Z",
+  "verified_on": "2026-11-12",
+  "draft": false,
+  "prerelease": false,
+  "workflow": {
+    "url": "https://github.com/jorgewattes/test-craft/actions/runs/43162168928",
+    "status": "completed",
+    "conclusion": "success"
+  },
+  "assets": [
+    {
+      "name": "test-craft-0.4.6-windows-x64.msi",
+      "size": 4878336,
+      "sha256": "55e162e7c288adba6d6dd0bdc507f373f5e485f7a6ed487780b7dc7674765aef"
+    },
+    {
+      "name": "test-craft-0.4.6-windows-x64.msi.sha256",
+      "size": 100,
+      "sha256": "cee12f337d5760ab791a45a1fdd5a8d24535139b1a61aac1efdad0c7764fce7c"
+    },
+    {
+      "name": "test-craft-0.4.6-windows-x64.zip",
+      "size": 4687725,
+      "sha256": "26d33dc4ce572227b16a13d719515ea0f5b4b724cb07eb97aef1f116e3bbea16"
+    },
+    {
+      "name": "test-craft-0.4.6-windows-x64.zip.sha256",
+      "size": 100,
+      "sha256": "285c4cb2e14887f6818cce1cdc96f360ad47232bf03d838b915f464865fd9ac5"
+    }
+  ],
+  "verification_source": "GitHub CLI release view and run view through Craft Anything build_command_run",
+  "scope": "Published GitHub artifacts only; local rebuilds and main branch changes do not update this release."
+}

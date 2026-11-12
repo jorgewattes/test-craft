@@ -70,6 +70,43 @@ mod tests {
         assert_eq!(std::fs::read(dir.join("banco.json")).unwrap(), b"invalid");
     }
     #[test]
+    fn difficulty_levels_survive_database_reopen_and_json_export() {
+        use crate::model::QuestionDifficulty;
+        let dir = folder("difficulty");
+        let (mut store, mut bank) = BankStore::open(&dir).unwrap();
+        let previous = bank.clone();
+        let template = bank.questions[0].clone();
+        bank.questions = std::iter::once(None)
+            .chain(QuestionDifficulty::ALL.into_iter().map(Some))
+            .enumerate()
+            .map(|(i, difficulty)| {
+                let mut question = template.clone();
+                question.id = i as u64 + 1;
+                question.difficulty = difficulty;
+                question
+            })
+            .collect();
+        store.save(&bank, Some(&previous)).unwrap();
+        drop(store);
+        let (_, reopened) = BankStore::open(&dir).unwrap();
+        assert_eq!(reopened.questions, bank.questions);
+        let json = dir.join("classified.json");
+        crate::model::save_bank(&json, &reopened).unwrap();
+        assert_eq!(
+            crate::model::read_bank(&json).unwrap().questions,
+            bank.questions
+        );
+        // Existing payloads have no level; loading must not assign one silently.
+        let mut legacy = serde_json::to_value(&template).unwrap();
+        legacy.as_object_mut().unwrap().remove("difficulty");
+        assert_eq!(
+            serde_json::from_value::<crate::model::Question>(legacy)
+                .unwrap()
+                .difficulty,
+            None
+        );
+    }
+    #[test]
     fn one_edit_in_ten_thousand_questions_writes_one_payload() {
         let mut store = memory();
         let mut bank = examples();
