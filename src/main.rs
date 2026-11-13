@@ -1289,7 +1289,7 @@ impl App {
         ui.horizontal_top(|ui|{
             ui.allocate_ui_with_layout(Vec2::new(w-side-22.,content_height),egui::Layout::top_down(egui::Align::Min),|ui|{
                 ui.set_width(w-side-22.);
-                egui::ScrollArea::vertical().id_salt("editor").auto_shrink([false,false]).max_height(ui.available_height()).show(ui,|ui|{
+                egui::ScrollArea::both().id_salt("editor").auto_shrink([false,false]).max_height(ui.available_height()).show(ui,|ui|{
                     if !self.draft.import_issues.is_empty(){
                         card().stroke(Stroke::new(2f32,ERROR)).show(ui,|ui|{
                             ui.colored_label(ERROR,"Problemas na importação");
@@ -1369,7 +1369,7 @@ impl App {
                         for (i,a) in self.draft.answers.iter_mut().enumerate(){
                             ui.horizontal(|ui|{
                                 let mut changed=ui.checkbox(&mut a.correct,format!("{}.",answer_label(i))).on_hover_text("Alternativa correta").changed();
-                                changed|=ui.add_sized([ui.available_width()-80.,32.],egui::TextEdit::singleline(&mut a.text).background_color(INPUT_BG).font(egui::TextStyle::Monospace)).changed();
+                                changed|=ui.add_sized([(ui.available_width()-128.).max(80.),CONTROL_HEIGHT],egui::TextEdit::singleline(&mut a.text).background_color(INPUT_BG).font(egui::TextStyle::Monospace)).changed();
                                 if ui.button("Img").on_hover_text("Adicionar imagem à alternativa").clicked(){match pick_picture(){Ok(Some(p))=>{a.pictures.push(p);changed=true;},Ok(None)=>{},Err(e)=>self.validation=Some(Err(e))}}
                                 if ui.button("×").clicked(){remove=Some(i)}
                                 if changed{self.dirty=true;self.validation=None; self.validation_example=None;}
@@ -1387,7 +1387,7 @@ impl App {
             ui.add_space(10.);
             ui.allocate_ui_with_layout(Vec2::new(side,content_height),egui::Layout::top_down(egui::Align::Min),|ui|{
                 ui.set_width(side);
-                egui::ScrollArea::vertical().id_salt("editor_preview").auto_shrink([false,false]).show(ui,|ui|{
+                egui::ScrollArea::both().id_salt("editor_preview").auto_shrink([false,false]).show(ui,|ui|{
                     card().show(ui,|ui|{
                         ui.set_width(side-42.);
                         small(ui,"PRÉVIA AO VIVO");
