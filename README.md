@@ -88,6 +88,6 @@ cargo build --locked
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-release.ps1
 ```
 
-O script gera MSI, ZIP, SHA-256, relatório de assinatura e as notas da versão em **dist/**. A configuração `unsignedReleaseVersion: "0.4.6"` em **release-config.json** autoriza somente essa versão sem certificado, inclusive no GitHub Actions. Outras versões exigem assinatura por padrão; a preparação local sem certificado precisa de `-AllowUnsigned`. Configure a assinatura conforme [SIGNING.md](SIGNING.md). Tags `vX.Y.Z` correspondentes à versão do Cargo.toml publicam os pacotes com as notas da versão atual e validação ICE obrigatória do instalador.
+O script gera MSI, ZIP, SHA-256, relatório de assinatura e as notas da versão em **dist/**. A configuração `unsignedReleaseVersion: "0.4.7"` em **release-config.json** autoriza somente essa versão sem certificado, inclusive no GitHub Actions. Outras versões exigem assinatura por padrão; a preparação local sem certificado precisa de `-AllowUnsigned`. Configure a assinatura conforme [SIGNING.md](SIGNING.md). Tags `vX.Y.Z` correspondentes à versão do Cargo.toml publicam os pacotes com as notas da versão atual e validação ICE obrigatória do instalador.
 
 Licença [MIT](LICENSE). Dependências e créditos em [CREDITS.md](CREDITS.md).

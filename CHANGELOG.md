@@ -1,4 +1,4 @@
-# Em desenvolvimento
+# Test Craft 0.4.7
 
 - Banco evita gravações sem alterações, reaproveita comandos de exclusão em lote e abre o esquema existente sem refazer sua criação; substituições completas removem questões antigas na mesma transação.
 - Histórico de provas carrega resumos ao abrir/atualizar a lista, sem reler provas e imagens a cada quadro; o registro completo é aberto somente na prévia.
