@@ -1,5 +1,9 @@
 # Em desenvolvimento
 
+- Banco evita gravações sem alterações, reaproveita comandos de exclusão em lote e abre o esquema existente sem refazer sua criação; substituições completas removem questões antigas na mesma transação.
+- Histórico de provas carrega resumos ao abrir/atualizar a lista, sem reler provas e imagens a cada quadro; o registro completo é aberto somente na prévia.
+- Cabeçalhos, campos, botões e espaçamentos uniformizados nas telas, com ações consistentes e estado vazio no histórico.
+
 - Classificação de questões como Exemplo, Fácil, Média, Difícil ou Desafio, com etiquetas no banco e na prévia e filtro combinado com busca, categoria e situação.
 - Níveis disponíveis aparecem automaticamente no seletor de categorias da prova; o sorteio respeita o nível escolhido, inclusive nas subcategorias, e evita seleções sobrepostas.
 - Classificação preservada no banco SQLite e na exportação JSON; questões antigas continuam sem classificação.

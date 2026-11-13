@@ -171,6 +171,44 @@ mod tests {
         );
     }
     #[test]
+    fn unchanged_save_does_not_write_or_invalidate_another_window() {
+        let dir = folder("no-op");
+        let (mut first, bank) = BankStore::open(&dir).unwrap();
+        let (mut second, mut edited) = BankStore::open(&dir).unwrap();
+        let changes = first.connection.total_changes();
+        first.save(&bank, Some(&bank)).unwrap();
+        assert_eq!(first.connection.total_changes(), changes);
+        edited.questions[0].title = "Outra janela".into();
+        second.save(&edited, Some(&bank)).unwrap();
+        // A stale no-op still reports the conflict rather than hiding it.
+        assert!(first.save(&bank, Some(&bank)).unwrap_err().contains("outra janela"));
+    }
+    #[test]
+    fn full_replacement_removes_old_rows_and_preserves_empty_categories() {
+        let mut store = memory();
+        let mut bank = examples();
+        store.save(&bank, None).unwrap();
+        bank.questions.truncate(1);
+        bank.category_labels = vec!["Nova/Vazia".into()];
+        store.save(&bank, None).unwrap();
+        let loaded = store.load().unwrap();
+        assert_eq!(loaded.questions, bank.questions);
+        assert!(loaded.category_labels.contains(&"Nova/Vazia".into()));
+        bank.questions.clear();
+        store.save(&bank, None).unwrap();
+        assert!(store.load().unwrap().questions.is_empty());
+    }
+    #[test]
+    fn versioned_database_configures_while_another_connection_is_writing() {
+        let dir = folder("read-during-write");
+        let (mut first, _) = BankStore::open(&dir).unwrap();
+        let tx = first.connection.transaction_with_behavior(TransactionBehavior::Immediate).unwrap();
+        tx.execute("UPDATE bank_meta SET revision=revision+1", []).unwrap();
+        let mut reader = BankStore::configure(Connection::open(dir.join("banco.sqlite3")).unwrap()).unwrap();
+        assert!(!reader.load().unwrap().questions.is_empty());
+        tx.rollback().unwrap();
+    }
+    #[test]
     fn stale_window_cannot_overwrite_newer_commit() {
         let dir = folder("concurrent");
         let (mut first, old) = BankStore::open(&dir).unwrap();
@@ -237,31 +275,33 @@ impl BankStore {
                 "Versão do banco mais recente que este aplicativo. Atualize o Test Craft.".into(),
             );
         }
-        connection
-            .execute_batch(
-                "
-            BEGIN IMMEDIATE;
-            CREATE TABLE IF NOT EXISTS bank_meta (
-                singleton INTEGER PRIMARY KEY CHECK(singleton=1),
-                revision INTEGER NOT NULL, initialized INTEGER NOT NULL CHECK(initialized IN (0,1))
-            );
-            INSERT OR IGNORE INTO bank_meta VALUES (1,0,0);
-            CREATE TABLE IF NOT EXISTS categories (
-                path TEXT PRIMARY KEY,
-                parent TEXT REFERENCES categories(path) DEFERRABLE INITIALLY DEFERRED
-            );
-            CREATE TABLE IF NOT EXISTS questions (
-                id TEXT PRIMARY KEY, position INTEGER NOT NULL CHECK(position>=0),
-                category TEXT NOT NULL REFERENCES categories(path) DEFERRABLE INITIALLY DEFERRED,
-                payload BLOB NOT NULL
-            );
-            CREATE INDEX IF NOT EXISTS questions_category_position ON questions(category, position);
-            CREATE INDEX IF NOT EXISTS questions_position ON questions(position);
-            PRAGMA user_version=1;
-            COMMIT;
-        ",
-            )
-            .map_err(|e| e.to_string())?;
+        if version == 0 {
+            connection
+                .execute_batch(
+                    "
+                BEGIN IMMEDIATE;
+                CREATE TABLE IF NOT EXISTS bank_meta (
+                    singleton INTEGER PRIMARY KEY CHECK(singleton=1),
+                    revision INTEGER NOT NULL, initialized INTEGER NOT NULL CHECK(initialized IN (0,1))
+                );
+                INSERT OR IGNORE INTO bank_meta VALUES (1,0,0);
+                CREATE TABLE IF NOT EXISTS categories (
+                    path TEXT PRIMARY KEY,
+                    parent TEXT REFERENCES categories(path) DEFERRABLE INITIALLY DEFERRED
+                );
+                CREATE TABLE IF NOT EXISTS questions (
+                    id TEXT PRIMARY KEY, position INTEGER NOT NULL CHECK(position>=0),
+                    category TEXT NOT NULL REFERENCES categories(path) DEFERRABLE INITIALLY DEFERRED,
+                    payload BLOB NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS questions_category_position ON questions(category, position);
+                CREATE INDEX IF NOT EXISTS questions_position ON questions(position);
+                PRAGMA user_version=1;
+                COMMIT;
+            ",
+                )
+                .map_err(|e| e.to_string())?;
+        }
         Ok(Self {
             connection,
             revision: 0,
@@ -351,6 +391,14 @@ impl BankStore {
                 "O banco foi alterado em outra janela. Reabra o aplicativo antes de salvar.".into(),
             );
         }
+        // Check the revision even for a no-op, but avoid writes and WAL growth.
+        if previous.is_some_and(|old| {
+            old.version == bank.version
+                && old.questions == bank.questions
+                && old.category_labels == bank.category_labels
+        }) {
+            return tx.commit().map_err(|e| e.to_string());
+        }
         let old_labels: Option<BTreeSet<String>> = previous.map(|bank| {
             categories(bank)
                 .into_iter()
@@ -376,9 +424,20 @@ impl BankStore {
                     .map_err(|e| e.to_string())?;
             }
         }
-        for id in old.keys().filter(|id| !ids.contains(id)) {
-            tx.execute("DELETE FROM questions WHERE id=?1", [id.to_string()])
-                .map_err(|e| e.to_string())?;
+        // Without a previous snapshot this is a full replacement, not an upsert.
+        let removed: Vec<String> = if previous.is_some() {
+            old.keys().filter(|id| !ids.contains(id)).map(u64::to_string).collect()
+        } else {
+            let mut stmt = tx.prepare_cached("SELECT id FROM questions").map_err(|e| e.to_string())?;
+            let rows = stmt.query_map([], |r| r.get::<_, String>(0)).map_err(|e| e.to_string())?;
+            let existing = rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
+            existing.into_iter().filter(|id| id.parse::<u64>().map_or(true, |id| !ids.contains(&id))).collect()
+        };
+        {
+            let mut delete = tx.prepare_cached("DELETE FROM questions WHERE id=?1").map_err(|e| e.to_string())?;
+            for id in removed {
+                delete.execute([id]).map_err(|e| e.to_string())?;
+            }
         }
         {
             let mut upsert = tx.prepare_cached("INSERT INTO questions(id,position,category,payload) VALUES (?1,?2,?3,?4)
@@ -416,9 +475,11 @@ impl BankStore {
             rows.collect::<Result<Vec<_>, _>>()
                 .map_err(|e| e.to_string())?
         };
-        for path in existing.iter().filter(|p| !labels.contains(*p)) {
-            tx.execute("DELETE FROM categories WHERE path=?1", [path])
-                .map_err(|e| e.to_string())?;
+        {
+            let mut delete = tx.prepare_cached("DELETE FROM categories WHERE path=?1").map_err(|e| e.to_string())?;
+            for path in existing.iter().filter(|p| !labels.contains(*p)) {
+                delete.execute([path]).map_err(|e| e.to_string())?;
+            }
         }
         tx.execute(
             "UPDATE bank_meta SET revision=revision+1, initialized=1 WHERE singleton=1",
